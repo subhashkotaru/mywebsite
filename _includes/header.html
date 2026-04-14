@@ -2,7 +2,7 @@
   <div class="container header-inner">
     <a href="{{ '/' | relative_url }}" class="site-logo">{{ site.title }}</a>
     <nav class="site-nav" aria-label="Main navigation">
-      <a href="{{ '/blog' | relative_url }}" class="nav-link{% if page.url contains '/blog' %} nav-link--active{% endif %}">Blog</a>
+      <a href="{{ '/blogs' | relative_url }}" class="nav-link{% if page.url contains '/blogs' %} nav-link--active{% endif %}">Blog</a>
       <a href="{{ '/projects' | relative_url }}" class="nav-link{% if page.url contains '/projects' %} nav-link--active{% endif %}">Projects</a>
       <a href="{{ '/about' | relative_url }}" class="nav-link{% if page.url == '/about/' or page.url == '/about' %} nav-link--active{% endif %}">About</a>
       <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode" title="Toggle dark mode">
@@ -15,7 +15,7 @@
     </button>
   </div>
   <nav class="mobile-nav" id="mobileNav" aria-hidden="true">
-    <a href="{{ '/blog' | relative_url }}" class="mobile-nav-link">Blog</a>
+    <a href="{{ '/blogs' | relative_url }}" class="mobile-nav-link">Blog</a>
     <a href="{{ '/projects' | relative_url }}" class="mobile-nav-link">Projects</a>
     <a href="{{ '/about' | relative_url }}" class="mobile-nav-link">About</a>
   </nav>

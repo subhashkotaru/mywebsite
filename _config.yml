@@ -13,7 +13,7 @@ author:
 # Build settings
 markdown: kramdown
 highlighter: rouge
-permalink: /blog/:slug/
+permalink: /blogs/:slug/
 
 plugins:
   - jekyll-feed
