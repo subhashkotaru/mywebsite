@@ -84,7 +84,7 @@
   // ── hero header: left info + right photo ─────────────────────
   &-header {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr 160px;
     max-width: $max-width-wide;
     margin: 0 auto $space-16;
     padding: 0 $space-6;
@@ -106,26 +106,31 @@
     min-width: 0;
   }
 
-  // right pane
+  // right pane — fixed 160px column, image fills it
   &-photo {
-    justify-self: center;
+    width: 160px;
+    height: 200px;
+    overflow: hidden;
+    border-radius: $radius-lg;
+    border: 1px solid var(--border-soft);
+    box-shadow: var(--shadow-md);
+    flex-shrink: 0;
 
     img {
       display: block;
-      width: 100%;
-      max-width: 260px;
-      height: auto;
-      aspect-ratio: 4 / 5;
+      width: 160px;
+      height: 200px;
       object-fit: cover;
       object-position: center 18%;
-      margin: 0 auto;
-      border-radius: $radius-lg;
-      border: 1px solid var(--border-soft);
-      box-shadow: var(--shadow-md);
+      margin: 0;
+      border-radius: 0;
+      border: none;
     }
 
     @media (max-width: 768px) {
-      img { max-width: 200px; }
+      width: 120px;
+      height: 150px;
+      img { width: 120px; height: 150px; }
     }
   }
 
