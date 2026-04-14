@@ -6,8 +6,8 @@ baseurl: "/mywebsite"
 author:
   name: "Subhash Kotaru"
   email: "sk12154@nyu.edu"
-  twitter: "yourhandle"
-  github: "yourhandle"
+  github: "subhashkotaru"
+  linkedin: "subhash-kotaru"
 
 # Build settings
 markdown: kramdown
