@@ -89,7 +89,7 @@
     margin: 0 auto $space-16;
     padding: 0 $space-6;
     gap: $space-12;
-    align-items: center;
+    align-items: flex-start;
 
     @media (max-width: 768px) {
       grid-template-columns: 1fr;
