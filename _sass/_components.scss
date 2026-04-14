@@ -85,16 +85,15 @@
   &-header {
     display: grid;
     grid-template-columns: 1fr 160px;
-    max-width: $max-width-wide;
+    max-width: $max-width;
     margin: 0 auto $space-16;
     padding: 0 $space-6;
-    gap: $space-12;
+    gap: $space-10;
     align-items: flex-start;
 
     @media (max-width: 768px) {
       grid-template-columns: 1fr;
       gap: $space-8;
-      padding: 0 $space-6;
     }
   }
 
