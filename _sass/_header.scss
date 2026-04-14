@@ -6,7 +6,10 @@
   border-bottom: 1px solid var(--border-soft);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  background: rgba(var(--bg), 0.9);
+
+  @supports (background: color-mix(in srgb, black, white)) {
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
+  }
 }
 
 .header-inner {
