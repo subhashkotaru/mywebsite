@@ -1,0 +1,40 @@
+---
+layout: default
+---
+<article class="project-page container">
+  <header class="project-page-header">
+    {% if page.image %}
+    <div class="project-page-image">
+      <img src="{{ page.image | relative_url }}" alt="{{ page.title }}">
+    </div>
+    {% endif %}
+    <div class="project-page-meta">
+      {% if page.tags %}
+      <div class="tags">
+        {% for tag in page.tags %}
+        <span class="tag">{{ tag }}</span>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if page.year %}<span class="project-year">{{ page.year }}</span>{% endif %}
+    </div>
+    <h1 class="project-page-title">{{ page.title }}</h1>
+    {% if page.description %}
+    <p class="project-page-desc">{{ page.description }}</p>
+    {% endif %}
+    <div class="project-page-links">
+      {% if page.github %}
+      <a href="{{ page.github }}" class="btn btn--outline" target="_blank" rel="noopener">View on GitHub</a>
+      {% endif %}
+      {% if page.live %}
+      <a href="{{ page.live }}" class="btn btn--primary" target="_blank" rel="noopener">Live Site →</a>
+      {% endif %}
+    </div>
+  </header>
+  <div class="post-content">
+    {{ content }}
+  </div>
+  <footer class="post-footer">
+    <a href="{{ '/projects' | relative_url }}" class="back-link">← All projects</a>
+  </footer>
+</article>

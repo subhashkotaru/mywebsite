@@ -1,0 +1,154 @@
+// ─── Project grid ─────────────────────────────────────────────
+.project-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: $space-6;
+}
+
+.project-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: $radius-lg;
+  overflow: hidden;
+  transition: box-shadow $transition-base, transform $transition-base;
+
+  &:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-2px);
+  }
+
+  .project-image {
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    background: var(--bg-alt);
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      margin: 0;
+      border-radius: 0;
+      border: none;
+      transition: transform 300ms ease;
+    }
+
+    &:hover img { transform: scale(1.03); }
+  }
+
+  .project-body {
+    padding: $space-5;
+  }
+}
+
+.project-title {
+  font-size: $text-lg;
+  font-weight: $font-medium;
+  letter-spacing: -0.01em;
+  margin-bottom: $space-2;
+
+  a {
+    color: var(--text-primary);
+    transition: color $transition-fast;
+
+    &:hover { color: var(--accent); }
+  }
+}
+
+.project-desc {
+  font-size: $text-sm;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: $space-4;
+}
+
+.project-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: $space-3;
+}
+
+.project-links {
+  display: flex;
+  gap: $space-3;
+  align-items: center;
+}
+
+.project-link {
+  font-size: $text-sm;
+  color: var(--text-muted);
+  transition: color $transition-fast;
+
+  &:hover { color: var(--text-primary); }
+
+  &--primary {
+    color: var(--accent);
+    font-weight: $font-medium;
+
+    &:hover { color: var(--accent-hover); }
+  }
+}
+
+// ─── Project page ─────────────────────────────────────────────
+.project-page {
+  padding: $space-16 0 $space-24;
+
+  &-header {
+    margin-bottom: $space-12;
+    padding-bottom: $space-10;
+    border-bottom: 1px solid var(--border-soft);
+  }
+
+  &-image {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    border-radius: $radius-lg;
+    margin-bottom: $space-8;
+    border: 1px solid var(--border-soft);
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      margin: 0;
+      border-radius: 0;
+      border: none;
+    }
+  }
+
+  &-meta {
+    display: flex;
+    align-items: center;
+    gap: $space-4;
+    margin-bottom: $space-4;
+  }
+
+  &-title {
+    font-size: clamp($text-2xl, 5vw, $text-4xl);
+    font-weight: $font-light;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    margin-bottom: $space-4;
+  }
+
+  &-desc {
+    font-size: $text-lg;
+    color: var(--text-secondary);
+    line-height: 1.65;
+    margin-bottom: $space-6;
+  }
+
+  &-links {
+    display: flex;
+    gap: $space-3;
+    flex-wrap: wrap;
+  }
+}
+
+.project-year {
+  font-size: $text-sm;
+  font-family: $font-mono;
+  color: var(--text-muted);
+}

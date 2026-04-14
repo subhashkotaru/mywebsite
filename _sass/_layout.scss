@@ -1,0 +1,33 @@
+.container {
+  width: 100%;
+  max-width: $max-width;
+  margin: 0 auto;
+  padding: 0 $space-6;
+}
+
+.container--wide {
+  max-width: $max-width-wide;
+}
+
+.main-content {
+  min-height: calc(100vh - 60px - 72px);
+}
+
+.section {
+  padding: $space-20 0;
+
+  &--alt {
+    background: var(--bg-alt);
+    border-top: 1px solid var(--border-soft);
+    border-bottom: 1px solid var(--border-soft);
+  }
+}
+
+.section-title {
+  font-size: $text-sm;
+  font-weight: $font-medium;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: $space-8;
+}

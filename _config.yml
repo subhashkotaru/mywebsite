@@ -1,0 +1,54 @@
+title: "Subhash Kotaru"
+description: "Developer"
+url: "https://subhashkotaru.github.io"
+baseurl: ""
+
+author:
+  name: "Subhash Kotaru"
+  email: "sk12154@nyu.edu"
+  twitter: "yourhandle"
+  github: "yourhandle"
+
+# Build settings
+markdown: kramdown
+highlighter: rouge
+permalink: /blog/:slug/
+
+plugins:
+  - jekyll-feed
+  - jekyll-seo-tag
+
+# Sass
+sass:
+  sass_dir: _sass
+  style: compressed
+
+# Exclude from build
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - node_modules
+  - README.md
+
+# Collections
+collections:
+  projects:
+    output: true
+    permalink: /projects/:slug/
+
+# Defaults
+defaults:
+  - scope:
+      path: ""
+      type: "posts"
+    values:
+      layout: "post"
+  - scope:
+      path: ""
+      type: "projects"
+    values:
+      layout: "project"
+  - scope:
+      path: "pages"
+    values:
+      layout: "page"

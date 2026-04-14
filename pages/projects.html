@@ -1,0 +1,51 @@
+---
+layout: default
+title: Projects
+permalink: /projects/
+description: Things I've built.
+---
+<div class="page container">
+  <header class="page-header">
+    <h1 class="page-title">Projects</h1>
+    <p class="page-description">A selection of things I've built, shipped, and learned from.</p>
+  </header>
+
+  {% if site.projects.size > 0 %}
+  <div class="project-grid">
+    {% for project in site.projects %}
+    <article class="project-card">
+      {% if project.image %}
+      <div class="project-image">
+        <img src="{{ project.image | relative_url }}" alt="{{ project.title }}">
+      </div>
+      {% endif %}
+      <div class="project-body">
+        <h2 class="project-title">
+          <a href="{{ project.url | relative_url }}">{{ project.title }}</a>
+        </h2>
+        <p class="project-desc">{{ project.description }}</p>
+        <div class="project-meta">
+          {% if project.tags %}
+          <div class="tags">
+            {% for tag in project.tags %}
+            <span class="tag">{{ tag }}</span>
+            {% endfor %}
+          </div>
+          {% endif %}
+          <div class="project-links">
+            {% if project.github %}
+            <a href="{{ project.github }}" class="project-link" target="_blank" rel="noopener">GitHub</a>
+            {% endif %}
+            {% if project.live %}
+            <a href="{{ project.live }}" class="project-link project-link--primary" target="_blank" rel="noopener">Live →</a>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p style="color: var(--text-muted); padding: 2rem 0;">No projects yet. Check back soon.</p>
+  {% endif %}
+</div>

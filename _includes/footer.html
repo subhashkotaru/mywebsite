@@ -1,0 +1,14 @@
+<footer class="site-footer">
+  <div class="container footer-inner">
+    <p class="footer-copy">© {{ site.time | date: "%Y" }} {{ site.author.name }}</p>
+    <div class="footer-links">
+      {% if site.author.github %}
+      <a href="https://github.com/{{ site.author.github }}" class="footer-link" target="_blank" rel="noopener">GitHub</a>
+      {% endif %}
+      {% if site.author.twitter %}
+      <a href="https://twitter.com/{{ site.author.twitter }}" class="footer-link" target="_blank" rel="noopener">Twitter</a>
+      {% endif %}
+      <a href="{{ '/feed.xml' | relative_url }}" class="footer-link">RSS</a>
+    </div>
+  </div>
+</footer>

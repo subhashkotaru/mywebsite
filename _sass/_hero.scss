@@ -1,0 +1,40 @@
+.hero {
+  padding: $space-24 0 $space-20;
+
+  &-eyebrow {
+    display: inline-block;
+    font-size: $text-sm;
+    font-weight: $font-medium;
+    color: var(--accent);
+    letter-spacing: 0.05em;
+    margin-bottom: $space-4;
+  }
+
+  &-title {
+    font-size: clamp($text-3xl, 6vw, $text-5xl);
+    font-weight: $font-light;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    margin-bottom: $space-6;
+
+    em {
+      font-style: italic;
+      font-weight: $font-light;
+    }
+  }
+
+  &-desc {
+    font-size: $text-lg;
+    color: var(--text-secondary);
+    max-width: 540px;
+    line-height: 1.65;
+    margin-bottom: $space-8;
+  }
+
+  &-actions {
+    display: flex;
+    gap: $space-4;
+    flex-wrap: wrap;
+  }
+}

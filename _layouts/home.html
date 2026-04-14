@@ -1,0 +1,75 @@
+---
+layout: default
+---
+{{ content }}
+
+<section class="section">
+  <div class="container">
+    <h2 class="section-title">Recent Writing</h2>
+    <div class="post-list">
+      {% for post in site.posts limit:5 %}
+      <article class="post-item">
+        <time class="post-date" datetime="{{ post.date | date_to_xmlschema }}">{{ post.date | date: "%b %-d, %Y" }}</time>
+        <h3 class="post-item-title">
+          <a href="{{ post.url | relative_url }}">{{ post.title }}</a>
+        </h3>
+        {% if post.excerpt %}
+        <p class="post-excerpt">{{ post.excerpt | strip_html | truncatewords: 25 }}</p>
+        {% endif %}
+        {% if post.tags.size > 0 %}
+        <div class="tags">
+          {% for tag in post.tags %}
+          <span class="tag">{{ tag }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </article>
+      {% endfor %}
+    </div>
+    {% if site.posts.size > 5 %}
+    <a href="{{ '/blog' | relative_url }}" class="see-all-link">All posts →</a>
+    {% endif %}
+  </div>
+</section>
+
+{% if site.projects.size > 0 %}
+<section class="section section--alt">
+  <div class="container">
+    <h2 class="section-title">Projects</h2>
+    <div class="project-grid">
+      {% for project in site.projects %}
+      <article class="project-card">
+        {% if project.image %}
+        <div class="project-image">
+          <img src="{{ project.image | relative_url }}" alt="{{ project.title }}">
+        </div>
+        {% endif %}
+        <div class="project-body">
+          <h3 class="project-title">
+            <a href="{{ project.url | relative_url }}">{{ project.title }}</a>
+          </h3>
+          <p class="project-desc">{{ project.description }}</p>
+          <div class="project-meta">
+            {% if project.tags %}
+            <div class="tags">
+              {% for tag in project.tags %}
+              <span class="tag">{{ tag }}</span>
+              {% endfor %}
+            </div>
+            {% endif %}
+            <div class="project-links">
+              {% if project.github %}
+              <a href="{{ project.github }}" class="project-link" target="_blank" rel="noopener">GitHub</a>
+              {% endif %}
+              {% if project.live %}
+              <a href="{{ project.live }}" class="project-link project-link--primary" target="_blank" rel="noopener">Live →</a>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}

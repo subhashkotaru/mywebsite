@@ -1,0 +1,38 @@
+---
+layout: default
+title: Writing
+permalink: /blog/
+description: Thoughts on software, design, and the web.
+---
+<div class="page container">
+  <header class="page-header">
+    <h1 class="page-title">Writing</h1>
+    <p class="page-description">Thoughts on software, design, and building things on the web.</p>
+  </header>
+
+  <div class="post-list">
+    {% for post in site.posts %}
+    <article class="post-item">
+      <time class="post-date" datetime="{{ post.date | date_to_xmlschema }}">{{ post.date | date: "%B %-d, %Y" }}</time>
+      <h2 class="post-item-title">
+        <a href="{{ post.url | relative_url }}">{{ post.title }}</a>
+      </h2>
+      {% if post.description %}
+      <p class="post-excerpt">{{ post.description }}</p>
+      {% elsif post.excerpt %}
+      <p class="post-excerpt">{{ post.excerpt | strip_html | truncatewords: 30 }}</p>
+      {% endif %}
+      {% if post.tags.size > 0 %}
+      <div class="tags" style="margin-top: 0.75rem;">
+        {% for tag in post.tags %}
+        <span class="tag">{{ tag }}</span>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </article>
+    {% endfor %}
+    {% if site.posts.size == 0 %}
+    <p style="color: var(--text-muted); padding: 2rem 0;">No posts yet. Check back soon.</p>
+    {% endif %}
+  </div>
+</div>
