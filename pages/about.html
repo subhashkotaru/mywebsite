@@ -6,10 +6,10 @@ permalink: /about/
 <div class="about container">
   <header class="about-header">
     <div class="about-avatar">
-      <img src="/assets/images/avatar.jpg" alt="Your Name">
+      <img src="{{ '/assets/images/avatar.jpg' | relative_url }}" alt="{{ site.author.name }}">
     </div>
-    <h1 class="about-name">Your Name</h1>
-    <p class="about-tagline">Designer, developer, and maker of things.</p>
+    <h1 class="about-name">{{ site.author.name }}</h1>
+    <p class="about-tagline">ML/AI engineer building systems that work in the real world.</p>
     <div class="about-links">
       <a href="https://github.com/subhashkotaru" class="btn btn--outline" target="_blank" rel="noopener">GitHub</a>
       <a href="https://www.linkedin.com/in/subhash-kotaru/" class="btn btn--outline" target="_blank" rel="noopener">LinkedIn</a>
@@ -18,8 +18,8 @@ permalink: /about/
     </div>
   </header>
   <div class="post-content">
-    <p>Hi! I'm a full-stack developer with a passion for building clean, performant web applications. I care deeply about developer experience and the details that make software feel polished.</p>
-    <p>I've been writing code professionally for over five years, working across startups and larger teams. My current interests include distributed systems, programming language design, and the intersection of design and engineering.</p>
+    <p>I’m an ML/AI engineer who enjoys building systems that are both technically strong and genuinely useful. I’m especially interested in the space where machine learning meets real-world software—from LLMs and agentic workflows to retrieval, infrastructure, and product-focused AI.</p>
+    <p>I like working on problems that require both experimentation and engineering, and I’m most excited by building things end to end and making them reliable in practice. Lately, I’ve been spending a lot of time thinking about ML systems, inference, and how to make AI products feel more robust and thoughtful.</p>
     <h2>What I work with</h2>
     <ul>
       <li>Languages: JavaScript / TypeScript, Ruby, Python, Go</li>
@@ -28,6 +28,6 @@ permalink: /about/
       <li>Tools: Git, Docker, Terraform, Vercel</li>
     </ul>
     <h2>Outside of work</h2>
-    <p>When I'm not at my desk I'm usually hiking, reading science fiction, or tinkering with electronics. I occasionally write about things that interest me — you can find that on the <a href="/blogs">blog</a>.</p>
+    <p>When I'm not at my desk I'm usually hiking, reading science fiction, or tinkering with electronics. I occasionally write about things that interest me — you can find that on the <a href="{{ '/blogs' | relative_url }}">blog</a>.</p>
   </div>
 </div>
