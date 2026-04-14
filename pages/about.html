@@ -3,18 +3,25 @@ layout: default
 title: About
 permalink: /about/
 ---
-<div class="about container">
+<div class="about container container--wide">
   <header class="about-header">
-    <div class="about-avatar">
-      <img src="{{ '/assets/images/profile.png' | relative_url }}" alt="{{ site.author.name }}" width="160" height="160" loading="lazy" decoding="async">
+    <div class="about-intro">
+      <h1 class="about-name">{{ site.author.name }}</h1>
+      <p class="about-tagline">Machine Learning Engineer · Master’s student in Computer Science at NYU</p>
+      <div class="about-contact">
+        <div class="about-links">
+          <a href="https://github.com/{{ site.author.github }}" class="btn btn--outline" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://www.linkedin.com/in/{{ site.author.linkedin }}/" class="btn btn--outline" target="_blank" rel="noopener">LinkedIn</a>
+        </div>
+        <ul class="about-contact-list">
+          <li><a href="mailto:{{ site.author.email }}">{{ site.author.email }}</a></li>
+          {% assign p = site.author.phone | strip %}
+          <li><a href="tel:{{ p | remove: '-' | remove: ' ' }}">{% if p.size == 10 %}{{ p | slice: 0, 3 }}-{{ p | slice: 3, 3 }}-{{ p | slice: 6, 4 }}{% else %}{{ p }}{% endif %}</a></li>
+        </ul>
+      </div>
     </div>
-    <h1 class="about-name">{{ site.author.name }}</h1>
-    <p class="about-tagline">Machine Learning Engineer · Master’s student in Computer Science at NYU</p>
-    <div class="about-links">
-      <a href="https://github.com/subhashkotaru" class="btn btn--outline" target="_blank" rel="noopener">GitHub</a>
-      <a href="https://www.linkedin.com/in/subhash-kotaru/" class="btn btn--outline" target="_blank" rel="noopener">LinkedIn</a>
-      <a href="mailto:sk12154@nyu.edu" class="btn btn--outline">sk12154@nyu.edu</a>
-      <a href="tel:3322801757" class="btn btn--outline">332-280-1757</a>
+    <div class="about-photo">
+      <img src="{{ '/assets/images/about-portrait.png' | relative_url }}" alt="{{ site.author.name }}" width="640" height="800" loading="lazy" decoding="async">
     </div>
   </header>
   <div class="post-content">
