@@ -100,6 +100,267 @@
   }
 }
 
+// ─── In-post table of contents (anchor nav) ───────────────────
+.post-toc {
+  margin: $space-8 0 $space-12;
+  padding: $space-5 $space-6;
+  background: var(--bg-alt);
+  border: 1px solid var(--border-soft);
+  border-radius: $radius-md;
+}
+
+.post-toc-title {
+  font-size: $text-xs;
+  font-weight: $font-medium;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: $space-3;
+}
+
+.post-toc-list {
+  display: flex;
+  flex-direction: column;
+  gap: $space-2;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+
+  a {
+    font-weight: $font-medium;
+    color: var(--text-primary);
+    text-decoration: none;
+    text-underline-offset: unset;
+    transition: color $transition-fast;
+
+    &:hover {
+      color: var(--accent);
+      text-decoration: none;
+    }
+  }
+}
+
+// ─── In-post flow diagrams ─────────────────────────────────────
+
+// Base container
+.post-content .post-flow {
+  margin: $space-6 auto $space-8;
+  max-width: 20rem;
+
+  // Horizontal 3-across layout
+  &--horizontal {
+    max-width: 100%;
+
+    .post-flow__list--row {
+      flex-direction: row;
+      align-items: stretch;
+      justify-content: center;
+      gap: 0;
+    }
+
+    .post-flow__step {
+      flex: 1;
+      flex-direction: row;
+      align-items: stretch;
+      max-width: 14rem;
+
+      &:not(:last-child)::after {
+        content: '→';
+        padding: 0 $space-2;
+        align-self: center;
+      }
+    }
+
+    .post-flow__bar {
+      flex: 1;
+    }
+  }
+
+  // Side-by-side compare layout
+  &--compare {
+    display: flex;
+    gap: $space-6;
+    max-width: 100%;
+    margin: $space-6 0 $space-8;
+
+    @media (max-width: 600px) {
+      flex-direction: column;
+    }
+  }
+}
+
+.post-content .post-flow__col {
+  flex: 1;
+}
+
+.post-content .post-flow__col-label {
+  font-size: $text-xs;
+  font-weight: $font-medium;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: $space-3;
+}
+
+// List reset
+.post-content .post-flow__list {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  list-style: none;
+  padding-left: 0;
+  margin-bottom: 0;
+}
+
+// Each step — the li itself is just a flex column that slots bar + arrow
+.post-content .post-flow__step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0;
+  list-style: none;
+
+  &:not(:last-child)::after {
+    content: '↓';
+    font-size: 0.7rem;
+    line-height: 1;
+    padding: $space-2 0;
+    color: var(--text-muted);
+    opacity: 0.55;
+  }
+}
+
+// ── Bar colours ────────────────────────────────────────────────
+
+// Base bar
+.post-content .post-flow__bar {
+  display: block;
+  width: 100%;
+  padding: $space-3 $space-4;
+  border-radius: $radius-sm;
+  text-align: center;
+  font-size: $text-sm;
+  font-weight: $font-medium;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  background: #f0e6d0;
+  border: 1px solid #ddd1b0;
+  box-shadow: var(--shadow-sm);
+
+  // Blue — differentiation methods
+  &--blue {
+    background: #ddeeff;
+    border-color: #aacce8;
+    color: #1a2e3d;
+  }
+
+  // Green — reverse AD steps
+  &--green {
+    background: #d8eddf;
+    border-color: #a3ccaf;
+    color: #1a3328;
+  }
+
+  // Muted — deprecated / classic approach
+  &--muted {
+    background: var(--bg-alt);
+    border-color: var(--border-soft);
+    color: var(--text-muted);
+  }
+
+  // Accent highlight within a row
+  &--accent {
+    border-width: 2px;
+    font-weight: 600;
+  }
+}
+
+[data-theme="dark"] {
+  .post-content .post-flow__bar {
+    background: #2c2718;
+    border-color: #4a4328;
+    color: var(--text-primary);
+  }
+
+  .post-content .post-flow__bar--blue {
+    background: #162030;
+    border-color: #2a4a62;
+    color: #c0d8ec;
+  }
+
+  .post-content .post-flow__bar--green {
+    background: #0e2218;
+    border-color: #1e4a30;
+    color: #a0d0b0;
+  }
+
+  .post-content .post-flow__bar--muted {
+    background: var(--bg-alt);
+    border-color: var(--border);
+    color: var(--text-muted);
+  }
+}
+
+// ─── Read-next link card ───────────────────────────────────────
+.post-next-link {
+  margin-top: $space-12;
+  padding: $space-5 $space-6;
+  border: 1px solid var(--border-soft);
+  border-left: 3px solid var(--accent);
+  border-radius: $radius-md;
+  background: var(--bg-alt);
+}
+
+.post-next-label {
+  display: block;
+  font-size: $text-xs;
+  font-weight: $font-medium;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: $space-2;
+}
+
+.post-next-title {
+  display: block;
+  font-size: $text-base;
+  font-weight: $font-medium;
+  color: var(--accent);
+  text-decoration: none;
+  margin-bottom: $space-2;
+  transition: color $transition-fast;
+
+  &:hover { color: var(--accent-hover); }
+}
+
+.post-next-desc {
+  font-size: $text-sm;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin: 0;
+}
+
+// ─── Nested TOC sublist ────────────────────────────────────────
+.post-toc-sublist {
+  list-style: none;
+  padding: 0;
+  margin: $space-1 0 0 $space-4;
+  display: flex;
+  flex-direction: column;
+  gap: $space-1;
+
+  a {
+    font-weight: $font-regular;
+    font-size: $text-sm;
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: color $transition-fast;
+
+    &:hover { color: var(--accent); }
+  }
+}
+
 // ─── Post content (prose) ─────────────────────────────────────
 .post-content {
   h1, h2, h3, h4 {
@@ -109,6 +370,7 @@
     color: var(--text-primary);
     margin-top: $space-12;
     margin-bottom: $space-4;
+    scroll-margin-top: calc(60px + #{$space-4});
   }
 
   h1 { font-size: $text-2xl; }
