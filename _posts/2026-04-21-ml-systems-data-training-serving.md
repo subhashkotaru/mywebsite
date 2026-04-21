@@ -8,7 +8,16 @@ tags: [ml-systems, machine-learning, engineering]
 <nav class="post-toc" aria-label="On this page">
   <p class="post-toc-title">On this page</p>
   <ul class="post-toc-list">
-    <li><a href="#overview">Overview of ML Systems</a></li>
+    <li><a href="#scalable-ai">Scalable AI: The End-to-End Engineering Discipline</a>
+      <ul class="post-toc-sublist">
+        <li><a href="#lifecycle">The AI Lifecycle (Stages 0–6)</a></li>
+        <li><a href="#ai-stack">The Modern AI Stack</a></li>
+        <li><a href="#two-views">Model View vs Systems View</a></li>
+        <li><a href="#training-vs-inference">Training Frameworks vs Inference Engines</a></li>
+        <li><a href="#scaling-walls">Scaling Walls</a></li>
+      </ul>
+    </li>
+    <li><a href="#overview">Overview of ML(Model) Systems</a></li>
     <li><a href="#autodiff">Automatic Differentiation</a>
       <ul class="post-toc-sublist">
         <li><a href="#diff-methods">Differentiation Methods</a></li>
@@ -50,6 +59,19 @@ tags: [ml-systems, machine-learning, engineering]
         <li><a href="#tensor-parallelism">Tensor Model Parallelism</a></li>
         <li><a href="#pipeline-parallelism">Pipeline Model Parallelism</a></li>
         <li><a href="#3d-parallelism">3D Parallelism</a></li>
+      </ul>
+    </li>
+    <li><a href="#parallelism-advanced">Parallelism: Communication, Context &amp; Experts</a>
+      <ul class="post-toc-sublist">
+        <li><a href="#comm-model">The α–β Communication Cost Model</a></li>
+        <li><a href="#topology-mapping">Topology Mapping</a></li>
+        <li><a href="#dp-fsdp-hsdp">DP → ZeRO → FSDP → HSDP</a></li>
+        <li><a href="#tp-advanced">Tensor Parallelism In Depth</a></li>
+        <li><a href="#pp-advanced">Pipeline Parallelism In Depth</a></li>
+        <li><a href="#cp-sp">Context &amp; Sequence Parallelism (CP/SP)</a></li>
+        <li><a href="#ep">Expert Parallelism (EP)</a></li>
+        <li><a href="#5d-mesh">5D Mesh Composition</a></li>
+        <li><a href="#parallelism-recipes">Training vs Serving Recipes</a></li>
       </ul>
     </li>
     <li><a href="#memory-optimisations">Memory Optimisations</a>
@@ -95,7 +117,221 @@ tags: [ml-systems, machine-learning, engineering]
   </ul>
 </nav>
 
-## Overview of Machine Learning Systems
+## Scalable AI: The End-to-End Engineering Discipline
+{: #scalable-ai}
+
+> *"In 2026, 'a training run' is not a system. Large-scale AI is end-to-end engineering, and quality, cost, and reliability need co-design across stages."*  
+> — UC Berkeley Scalable AI, Spring 2026
+
+Most ML courses treat model training as the core problem and serve the model as an afterthought. Real production AI is the opposite: the training run is one stage in a **seven-stage lifecycle**, and decisions made at Stage 0 (target definition) cascade all the way to Stage 5 (application reliability). Upstream mistakes — a tokenizer with the wrong vocab size, an architecture with too many KV heads, data contamination in the eval set — compound silently until they become expensive downstream failures.
+
+This section frames the **two maps** you need to reason about any large-scale AI system:
+
+1. **The Lifecycle** (time axis) — what happens at each stage and what artifact each stage produces
+2. **The Stack** (layer axis) — what software and hardware layers support each workload, and which layer is your current bottleneck
+
+<div class="post-flow post-flow--horizontal" role="group" aria-label="Two coordinate systems for large-scale AI">
+  <ol class="post-flow__list post-flow__list--row">
+    <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--blue">Lifecycle map — time: Stages 0 → 6</span></li>
+    <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--green">Stack map — layers: workloads → frameworks → compute substrate</span></li>
+  </ol>
+</div>
+
+---
+
+### The AI Lifecycle (Stages 0–6)
+{: #lifecycle}
+
+Every stage has a **goal**, a set of **decisions**, and a **concrete artifact**. If you can't name the artifact, you're not done with the stage.
+
+<div class="post-flow" role="group" aria-label="AI lifecycle stages 0 to 6">
+  <ol class="post-flow__list">
+    <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--blue">Stage 0 — Targets: define success criteria before burning GPU-hours</span></li>
+    <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--blue">Stage 1 — Architecture: choose a model family that fits the constraint envelope</span></li>
+    <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--blue">Stage 2 — Pre-training: large-scale self-supervised learning on curated data</span></li>
+    <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--blue">Stage 3 — Post-training: SFT + preference optimisation → controllable, useful model</span></li>
+    <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--muted">Stage 4 — Inference: serve under real traffic within SLOs and cost budgets</span></li>
+    <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--muted">Stage 5 — Applications: context engineering, tool use, reliability, guardrails</span></li>
+    <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--green">Stage 6 — Research: tighten the next lifecycle with credible experimental evidence</span></li>
+  </ol>
+</div>
+
+**Stage 0 — Targets**
+
+Before any training, get painfully concrete:
+
+- **Target distribution**: what do you want to be good at — chat, code, math, tool use?
+- **Quality definition**: specific benchmarks, human evals, app-level metrics (not "generally capable")
+- **Cost envelope**: training GPU-hours, inference SLOs (p50/p99 latency, tokens/$ budget)
+
+The recurring failure mode: "we will measure that later." Without a measurement, capability silently regresses. Every post-training decision and every inference optimisation traces back to the quality bar set here.
+
+**Stage 1 — Architecture**
+
+Architecture decisions have a long tail: they set training dynamics *and* the economics of serving for the model's entire lifespan. Key choices:
+
+| Axis | Choice | Serving consequence |
+|---|---|---|
+| Attention | Full vs. GQA vs. MLA | KV cache size per request |
+| FFN | Dense vs. MoE | Expert routing overhead; memory spill |
+| Context | Full vs. sparse/linear attention | Long-context latency and memory |
+| Normalisation | Pre-norm vs. post-norm | Stability at depth; fine-tuning sensitivity |
+
+Artifact: a randomly-initialised model definition (architecture config + weight shapes).
+
+**Stage 2 — Pre-training**
+
+Industrial-scale self-supervised learning is three coupled problems:
+
+1. **Data** — acquisition, deduplication, quality filtering, decontamination from eval sets (NeMo Curator)
+2. **Training** — loss schedule, numerical stability, throughput engineering (NeMo AutoModel / Megatron)
+3. **Systems** — distributed strategy, memory management, fault tolerance
+
+Artifact: a base model checkpoint + training telemetry (loss curves, stability signals, throughput).
+
+**Stage 3 — Post-training**
+
+Converts "capable" into "controllable and useful":
+
+- **SFT** — instruction following, format discipline, tool call schemas
+- **Preference optimisation** (RLHF/DPO/GRPO) — helpfulness, safety, task success
+- Evaluation shifts from perplexity to **behaviour-centric**: task success rate, refusal accuracy, schema validity
+
+Artifact: a serving-ready post-trained checkpoint.
+
+**Stage 4 — Efficient Inference**
+
+The four questions every inference engineer asks:
+
+1. What is the cost per token?
+2. What is p50/p99 latency per request?
+3. How do we batch without breaking user experience (chunked prefill, continuous batching)?
+4. What happens when context length grows (KV cache pressure, disaggregation)?
+
+Tools: compilation/graph capture (Dynamo), quantisation (TRT-LLM), decoding engines (vLLM, SGLang).
+
+Artifact: a production serving configuration, often with quantised variants per SLO tier.
+
+**Stage 5 — Applications**
+
+Where weights meet real users. The stack below the model determines reliability:
+
+- **Context engineering**: retrieval, reranking, memory, compression
+- **Tool use**: function-calling loops, agents, planners, verifiers (NeMo Agent Toolkit)
+- **Reliability**: schema-constrained outputs, retries, validation, guardrails (NeMo Guardrails)
+- **Safety**: adversarial evaluation (Garak), content moderation hooks, incident response
+
+A single weak link upstream — data contamination, misaligned fine-tuning, aggressive quantisation — can make weights that look great in isolation fail continuously in production.
+
+**Stage 6 — Research**
+
+Once the stack is understood, research questions sharpen:
+
+- Which bottleneck is **fundamental** vs. contingent on current hardware?
+- Which architectural change reduces total cost without breaking quality?
+- What training objective unlocks better reasoning, tool use, or robustness?
+
+Artifact: evidence (positive *or* negative) that tightens the next lifecycle iteration. A clean negative result with a diagnosis teaches more than a noisy positive.
+
+---
+
+### The Modern AI Stack
+{: #ai-stack}
+
+The lifecycle runs on a **layered stack**. When something is slow, expensive, or unreliable, the question is: *which layer is the bottleneck?*
+
+| Layer | What it does | Example tooling |
+|---|---|---|
+| **AI Workloads** | Data pipelines, training, eval, serving, safety monitoring | NeMo Curator, NeMo Data Designer |
+| **Frameworks & Engines** | Differentiable compute graphs, distributed training, serving engines | PyTorch/JAX, Megatron, FSDP, DeepSpeed, vLLM, SGLang |
+| **Distributed Compute** | Task scheduling, fault tolerance across nodes | Ray, Spark, custom distributed services |
+| **Orchestration** | Container and cluster management | Kubernetes, SLURM, VM-based deployments |
+| **Compute Substrate** | Physical GPUs, networking (NVLink, InfiniBand), storage, cloud | H100 nodes, NVLink3, RDMA over IB |
+
+**Why layers matter**: a kernel tuning effort (Frameworks layer) can be bottlenecked by interconnect bandwidth (Compute Substrate layer). A scheduling improvement (Orchestration layer) only helps if the Frameworks layer isn't blocking on synchronisation. Diagnosing at the wrong layer wastes time.
+
+---
+
+### Model View vs Systems View
+{: #two-views}
+
+High-performing teams hold **two complementary reasoning modes** simultaneously and switch between them deliberately:
+
+<div class="post-flow post-flow--compare" role="group" aria-label="Model view vs systems view">
+  <div class="post-flow__col">
+    <p class="post-flow__col-label">Model View</p>
+    <ol class="post-flow__list">
+      <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--blue">Optimise for quality: loss, benchmarks, behaviour</span></li>
+      <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--blue">Choose architecture for scaling on the target distribution</span></li>
+      <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--blue">Curate data for specific capabilities, not just "more tokens"</span></li>
+      <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--muted">Risk: great weights that can't hit latency/cost budgets</span></li>
+    </ol>
+  </div>
+  <div class="post-flow__col">
+    <p class="post-flow__col-label">Systems View</p>
+    <ol class="post-flow__list">
+      <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--green">Start from serving constraints: SLOs, budget, memory ceilings</span></li>
+      <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--green">Design architecture + deployment that satisfies those constraints</span></li>
+      <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--green">Train within that envelope; measure relentlessly</span></li>
+      <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--muted">Risk: efficient model that can't learn enough to be useful</span></li>
+    </ol>
+  </div>
+</div>
+
+The trap of the pure **Model View**: you train a model with excellent benchmark numbers, then discover at Stage 4 that the KV cache is 12 GB per request — too large to serve at reasonable batch sizes — because the architecture was never constrained by serving memory. Fixing this requires retraining.
+
+The trap of the pure **Systems View**: you optimise aggressively for throughput (aggressive quantisation, very short context window) and ship a model that is fast but too restricted to be useful — the quality bar from Stage 0 was never met.
+
+The correct approach: start with the **serving constraint** (latency budget, memory per GPU, $/1M tokens), work backwards to architecture constraints (KV heads, context length, quantisation target), then optimise quality within that envelope.
+
+**Interview question**: A model passes all benchmarks in evaluation, but after deployment latency SLOs are consistently violated. Walk through how you would diagnose whether the bottleneck is compute, memory bandwidth, KV cache size, or scheduling.
+
+> **Answer**: start with profiling, not guessing. (1) Is GPU compute saturated? — check SM utilisation; if low, the kernel is memory-bandwidth-bound. (2) Is HBM bandwidth saturated? — roofline analysis: at batch=1 decode, arithmetic intensity ≈ 2 FLOP/byte vs. A100's 156 roofline, so decode is almost always bandwidth-bound. Fix: larger batch, quantisation to reduce weight bytes. (3) Is KV cache pressure causing eviction or swap? — vLLM metrics: block utilisation, eviction rate. Fix: PagedAttention, smaller KV (GQA, MLA), aggressive KV quantisation. (4) Is the scheduler introducing latency? — measure queuing time vs. compute time per request; overlapped scheduling or disaggregated prefill/decode may help.
+
+---
+
+### Training Frameworks vs Inference Engines
+{: #training-vs-inference}
+
+The same weights run on fundamentally different software stacks for training and inference. Confusing the two causes misdiagnosed performance problems.
+
+| | Training Frameworks | Inference Engines |
+|---|---|---|
+| **Examples** | NeMo AutoModel, Megatron, DeepSpeed, FSDP | Dynamo, TensorRT-LLM, vLLM, SGLang |
+| **Primary goal** | Throughput — eat tokens fast | Latency and concurrency |
+| **Key concern** | Numerical stability under backprop | Continuous batching + request scheduling |
+| **Batching** | Large static mini-batches; gradient sync | Dynamic batches; variable sequence lengths |
+| **Memory** | Activation checkpointing, optimizer state sharding | KV cache management; fragmentation avoidance |
+| **Fault model** | Resume from checkpoint on node failure | Zero-downtime deploys; request retries |
+
+**Why this matters**: a training engineer who optimises their kernel for training throughput may ship a kernel that is fast in the training regime (large batch, full matrix compute) but memory-bandwidth-bound in the serving regime (batch=1, memory-bound decode). The roofline position is completely different.
+
+**Interview question**: You are told "our model is slow at inference." What is the first thing you measure, and why?
+
+> **Answer**: time-to-first-token (TTFT) vs. time-between-tokens (TBT). They diagnose different bottlenecks. High TTFT → prefill is slow (compute-bound, long prompt, or chunked prefill chunk too small). High TBT → decode is slow (memory bandwidth, KV cache pressure, small batch). Once you know which phase is slow, profile the GPU at that phase: SM utilisation, HBM bandwidth utilisation, and KV block eviction rate. Diagnosis drives the fix (chunked prefill scheduling, quantisation, PagedAttention, speculative decoding, etc.).
+
+---
+
+### Scaling Walls
+{: #scaling-walls}
+
+Every large-scale AI system eventually hits one of five **scaling walls**. The skill is diagnosing *which one* from measurements, not intuition.
+
+| Wall | What it limits | Typical symptom | Fix direction |
+|---|---|---|---|
+| **Compute (FLOPs)** | Training throughput, prefill speed | GPU SM utilisation saturated | Better kernels, tensor parallelism, operator fusion |
+| **Memory capacity** | Model size, KV cache batch size | OOM errors, small max batch | ZeRO/FSDP, quantisation, GQA/MLA, KV offloading |
+| **Memory bandwidth** | Decode throughput per GPU | Low SM util, high HBM util | Larger batch to amortise weight loads, quantisation |
+| **Communication** | Scaling across GPUs/nodes | AllReduce dominates step time | Gradient compression, topology-aware parallelism, overlap |
+| **Data** | Training quality, convergence speed | Loss plateau despite more compute | Better curation, deduplication, synthetic data |
+
+The wall you're hitting changes with scale. A single-GPU fine-tuning job is memory-capacity-bound (can't fit the model). A 512-GPU pretraining run is often communication-bound (AllReduce latency dominates). A high-throughput serving system is memory-bandwidth-bound (weight loads per decode step exceed compute).
+
+**Common misconception**: "our GPU utilisation is only 40%, so we're compute-bound." GPU SM utilisation being low means you are *not* compute-bound — you are probably memory-bandwidth-bound (the GPU is waiting for data) or communication-bound (it's stalled on a collective). True compute-bound systems have SM utilisation near 100%.
+
+---
+
+## Overview of Machine Learning(Model) Systems
 {: #overview}
 
 <div class="post-flow" role="group" aria-label="ML system stack, flowing top to bottom">
@@ -824,6 +1060,453 @@ No single strategy dominates. Real production systems combine all three:
 
 ---
 
+## Parallelism: Communication, Context & Experts
+{: #parallelism-advanced}
+
+The previous sections introduced the three main parallelism axes. This section adds the **communication cost model** that lets you predict when collectives dominate, the **topology mapping rules** that decide which strategies go where, two newer parallelism dimensions (**CP/SP** for long context, **EP** for MoE), and practical recipes for assembling these into a **5D mesh** for both training and serving.
+
+The extended runtime bound with communication as a third roof:
+
+```
+T_total ≳ max( T_compute,  T_HBM,  T_comm )
+                              ↑
+                       α + β × bytes
+```
+
+Parallelism shifts pressure among these three terms and decides what sits on the critical path.
+
+---
+
+### The α–β Communication Cost Model
+{: #comm-model}
+
+Every distributed collective operation pays two costs:
+
+```
+T_comm(n bytes) ≈ α + β · n
+
+α = startup latency    (kernel launch, routing setup, synchronisation)
+β = 1 / bandwidth      (time per byte; set by the bottleneck link)
+```
+
+| Message regime | Dominant term | Fix |
+|---|---|---|
+| Small (n ≪ α/β) | α — latency-bound | Batch/fuse messages; reduce collective count |
+| Large (n ≫ α/β) | β·n — bandwidth-bound | Compress, quantise, or shard data |
+
+**Why this matters for decode.** During autoregressive generation the token batch is tiny — TP collectives carry `B_tok · D` bytes where B_tok=1. At BF16 with D=8192 that's just 16 KB per collective. On NVLink (α ≈ 2–5 µs) the latency term already dominates. Adding more TP ranks multiplies α without reducing bytes — TPOT grows linearly with TP group size for small batches.
+
+**Ring AllReduce cost.** For p ranks and a tensor of n bytes, ring AllReduce (ReduceScatter + AllGather) costs:
+
+```
+T_ring(n) ≈ 2(p−1)·α  +  2·(p−1)/p · β·n
+```
+
+For large n the bandwidth term dominates and approaches 2βn regardless of p — Ring AllReduce achieves near-optimal bandwidth scaling. For small n, the 2(p−1)α startup term dominates — bigger groups hurt latency.
+
+**Gradient bucketisation** exploits this: instead of AllReducing each parameter tensor individually (paying α per tensor), pack gradients into 25–100 MiB buckets. Fewer, larger messages amortise the α cost while the bucket launches are overlapped with ongoing backprop.
+
+**The eight collective primitives:**
+
+| Primitive | What it does | Used by |
+|---|---|---|
+| **AllReduce** | Sum across ranks; everyone gets full result | DP gradient sync |
+| **ReduceScatter** | Reduce then shard output (each rank keeps one slice) | ZeRO-2/3, FSDP backward |
+| **AllGather** | Gather shards so everyone gets full tensor | ZeRO-3/FSDP forward, TP |
+| **AllToAll** | Many-to-many "transpose" of shards | MoE dispatch/combine (EP) |
+| **Broadcast** | Root sends to all | Checkpoint distribution |
+| **Gather/Scatter** | Rooted: build or distribute full tensor | Initialisation |
+| **SendRecv** | Point-to-point | Pipeline stage boundaries (PP) |
+
+Key: if you can name the primitive a strategy uses, you can predict payload size, topology sensitivity, and whether α or β dominates.
+
+> **Interview question:** A training run on 64 GPUs achieves 60% MFU. Profiling shows 35% of step time is AllReduce. Gradient bucketing is already enabled. What are the likely remaining causes and fixes?
+>
+> *With bucketing already enabled the problem is either (1) **not enough overlap** — backprop for later layers finishes too quickly, so the bucket AllReduce for early layers can't start until backprop completes. Fix: reduce bucket size slightly so buckets launch earlier; or use ZeRO-2 (ReduceScatter per bucket instead of AllReduce, same bytes but pipelined differently). (2) **Inter-node bandwidth bottleneck** — 64 GPUs likely spans multiple nodes; if all DP AllReduces cross InfiniBand the β term dominates for large models. Fix: HSDP — reduce within node on NVLink first, then reduce the partial result across nodes. (3) **Gradient accumulation not used** — if global batch is fixed and DP=64, each GPU's local batch is tiny; accumulate gradients over A micro-steps to reduce AllReduce frequency by A×. (4) **Too many DP ranks, too few TP** — if one layer's weight matrix is 8GB and TP=1, the backward GEMM is memory-bound and fast, leaving a long communication window uncovered. Try TP=2 or 4 to slow down individual GEMMs and make overlap more effective.*
+
+---
+
+### Topology Mapping
+{: #topology-mapping}
+
+Not all GPU pairs have the same latency and bandwidth. The same collective on NVLink vs InfiniBand can differ by 10–50× in bandwidth and 5–10× in latency. Topology mapping assigns process groups to physical hardware so the **hottest collectives use the fastest links**.
+
+**Typical cluster hierarchy:**
+
+| Scope | Link | Bandwidth | Latency |
+|---|---|---|---|
+| Within a node (GPU–GPU via NVSwitch) | NVLink | ~900 GB/s aggregate | ~1–2 µs |
+| Within a node (GPU–GPU via PCIe) | PCIe | ~64 GB/s | ~5–10 µs |
+| Across nodes | InfiniBand HDR/NDR | ~25–50 GB/s per NIC | ~1–5 µs + routing |
+| Across nodes | Ethernet | ~12.5–50 GB/s | ~5–20 µs |
+
+**Hot vs cold collectives:**
+
+| Collective | Frequency | Hotness | Placement rule |
+|---|---|---|---|
+| TP per-layer AllReduce/AllGather | Every layer, forward + backward | 🔥 Hot | Within node (NVLink) |
+| EP AllToAll dispatch/combine | Every MoE layer | 🔥 Hot | Within node if possible |
+| CP attention exchange | Every attention layer | 🔥 Hot | Within node; cross-node carefully |
+| PP SendRecv at stage boundaries | Every microbatch × boundary | Medium | Can span nodes (point-to-point) |
+| DP gradient AllReduce | Once per optimizer step | ❄ Cold | Can span nodes; overlap with backprop |
+
+**General rule:** Frequent-per-layer collectives (TP, EP, CP) must stay inside the fastest fabric available. Infrequent-per-step collectives (DP) can afford slower links because they overlap with compute. PP is point-to-point — it can span nodes but introduces serialisation latency, which hurts serving more than training.
+
+---
+
+### DP → ZeRO → FSDP → HSDP
+{: #dp-fsdp-hsdp}
+
+These form a progression of increasingly aggressive memory sharding, each adding more communication in exchange for less memory per GPU.
+
+**DDP (baseline).** Full model replicated on every GPU. AllReduce gradients once per step — `P · b_g` bytes total, overlapped with backprop via gradient bucketing.
+
+```
+Memory per GPU ≈ P · (b_θ + b_g + b_m,v + b_master) ≈ 16 bytes/param (AdamW mixed precision)
+```
+
+DDP is the simplest and fastest when the model fits. It breaks only on capacity (OOM).
+
+**ZeRO stages** shard the replicated state, cutting memory by N_dp without changing compute:
+
+| Stage | What's sharded | Memory reduction | New communication |
+|---|---|---|---|
+| ZeRO-1 | Optimizer state (m, v) | ~4× | None beyond DDP |
+| ZeRO-2 | + Gradients | ~8× | ReduceScatter grads during backward |
+| ZeRO-3 / FSDP | + Parameters | ~N_dp× | AllGather params (fwd+bwd) + ReduceScatter grads |
+
+**FSDP per-layer loop:**
+
+<div class="post-flow" role="group" aria-label="FSDP per-layer execution">
+  <ol class="post-flow__list">
+    <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--blue">AllGather: reconstruct full layer weights from shards on all ranks</span></li>
+    <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--blue">Compute forward pass with full weights; optionally reshard immediately</span></li>
+    <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--blue">Backward: AllGather again; compute local gradients</span></li>
+    <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--green">ReduceScatter: each GPU accumulates only its gradient shard</span></li>
+    <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--green">Optimizer: update local weight shard using local optimizer state shard</span></li>
+  </ol>
+</div>
+
+FSDP moves communication from "once per step" (DDP) to "many times per step" (per layer). This is fine in training when prefetch overlapping is enabled — AllGather for layer ℓ+1 runs while layer ℓ is computing. It is dangerous for serving latency: the per-layer AllGather sits on the decode critical path.
+
+**Three FSDP performance knobs:**
+1. **Sharding strategy**: ZeRO-2-like (shard gradients + optimizer only) vs ZeRO-3-like (shard parameters too)
+2. **Prefetch and overlap**: AllGather for the next layer must be launched while the current layer runs — if not overlapped it becomes visible latency
+3. **Wrapping granularity**: too-small units → too many collectives (α tax); too-large units → memory spikes and poor concurrency
+
+**HSDP (Hierarchical Sharding Data Parallelism)** applies sharding in two levels matched to topology:
+- Inner group: shard+reduce within node on NVLink (fast, low α)
+- Outer group: reduce aggregated results across nodes on InfiniBand (slower, but fewer operations)
+
+Decision rubric: DDP if it fits → FSDP if OOM → HSDP if multi-node with FSDP showing slow cross-node AllGathers.
+
+---
+
+### Tensor Parallelism In Depth
+{: #tp-advanced}
+
+TP shards individual weight matrices across N_tp ranks. Every linear layer `Y = XW` has two natural split axes:
+
+**Column-parallel (shard output features, F/p per rank):**
+- Each rank holds `W_i` (columns F/p to F/p+1)
+- Local GEMM: `Y_i = X · W_i` — X is replicated, Y is sharded
+- No AllReduce during forward; optional AllGather if next op needs full Y
+- Backward: ReduceScatter on X gradient
+
+**Row-parallel (shard input features, D/p per rank):**
+- Each rank holds `W_i` (rows D/p to D/p+1) and matching input shard `X_i`
+- Local GEMM: `Ỹ_i = X_i · W_i` — partial results; AllReduce to sum → full Y
+- AllReduce payload: `B_tok · D · b` (smaller than the intermediate F-sized activations)
+
+**Megatron strategy — synchronise where the tensor is small:**
+
+```
+Expand:   D → F (≈4D):  Column-parallel  →  Y stays sharded at size B_tok × F
+Contract: F → D:        Row-parallel     →  AllReduce on smaller B_tok × D tensor
+```
+
+Keep the biggest intermediate activations sharded; put the unavoidable AllReduce at the narrowest boundary tensor.
+
+**Inside a decoder block:**
+- `W_QKV`: column-parallel (shard heads; head independence makes this clean)
+- `W_O`: row-parallel (reduce at residual, size D)
+- `W_up, W_gate`: column-parallel (D→F; big intermediate stays sharded)
+- `W_down`: row-parallel (F→D; reduce at residual)
+
+Result: **two AllReduces per transformer block** — one at attention output, one at MLP output.
+
+**Training vs serving TP size trade-off:**
+
+| View | Effect of larger N_tp |
+|---|---|
+| Training | Reduces per-rank weight memory; helps fit large microbatches; collectives often tolerable on NVLink |
+| Serving (decode) | More participants in per-layer collectives; for small B_tok, α dominates → TPOT grows |
+
+Rule: use the smallest N_tp that fits weights per shard while meeting latency targets. Keep TP within one NVSwitch domain.
+
+**TP failure modes:**
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| TPOT grows linearly with N_tp | α-dominated collectives on decode (small messages) | Keep TP within node; reduce N_tp; add replicas |
+| Low throughput despite TP | Microbatches too small; kernels inefficient | Increase B_tok via DP or accumulation |
+| Cross-node TP is terrible | Per-layer collectives crossing slow InfiniBand | Move TP intra-node; use PP across nodes |
+| OOM in activations | Replicated tensors or AllGather too costly | Enable SP/CP; use ReduceScatter to keep activations sharded |
+
+---
+
+### Pipeline Parallelism In Depth
+{: #pp-advanced}
+
+PP assigns consecutive transformer blocks to ordered "stages." Each stage lives on one (or a few) GPUs. Activations are passed forward via SendRecv at stage boundaries; activation gradients pass backward similarly.
+
+**The bubble problem.** With N_pp stages and naïve execution only one stage is active at a time — (N_pp − 1)/N_pp of cycles are wasted. Microbatching fills the pipeline:
+
+```
+Bubble fraction ≈ (N_pp − 1) / (M + N_pp − 1)
+```
+
+With N_pp=8, M=32 microbatches: bubble fraction ≈ 18%.
+
+**Schedule comparison:**
+
+| Schedule | Bubble fraction | Activation memory | Comm per step |
+|---|---|---|---|
+| GPipe (fill-drain) | (N_pp−1)/M | O(M × microbatch) — stores all | 1 SendRecv/boundary |
+| 1F1B | (N_pp−1)/M | O(N_pp × microbatch) — much less | 1 SendRecv/boundary |
+| Interleaved 1F1B | (N_pp−1)/(v·M) | O(N_pp × microbatch) | v× more SendRecvs |
+
+1F1B interleaves one forward and one backward in steady state — same bubble as GPipe but ~4× less activation memory at equal microbatch count. Interleaved 1F1B divides each stage into v sub-stages, reducing the bubble by v× at the cost of v× more point-to-point messages.
+
+**PP boundary payload:**
+```
+bytes_send ≈ B_tok,µ · D · b_a   (per boundary, per microbatch)
+```
+
+Always cut at transformer-block boundaries where activations are `B_tok × D`. Cutting inside an MLP (where intermediate size is `B_tok × F ≈ 4·B_tok·D`) quadruples boundary traffic.
+
+**Stage balance is as important as bubble reduction.** If one stage has 20% more compute than others, it becomes the straggler and everyone waits regardless of schedule. Profile per-stage compute time and rebalance layer assignments if needed.
+
+**PP checklist:**
+1. **Fit**: pick N_pp so stage-local weights + activations fit
+2. **Cut**: at transformer-block boundaries (B_tok × D payload)
+3. **Balance**: profile stages; avoid expensive layers clustering in one stage
+4. **Fill**: choose (B_µ, M) and schedule (GPipe/1F1B/interleaved) to reduce bubbles
+
+**PP in serving.** PP introduces stage-to-stage serialisation on the decode critical path — every token must pass through all N_pp stages sequentially. This directly increases TPOT. Use PP in serving only when required for capacity, and compensate with replica-level parallelism and aggressive batching.
+
+> **Interview question:** You are deploying a 530B model on 128 H100s (8 per node, 16 nodes). Describe the parallelism strategy, the topology mapping, and what failure modes to watch.
+>
+> *Strategy: 3D parallelism. TP=8 within each node (NVLink; handles per-layer collectives at full NVSwitch bandwidth). PP=8 across 8 consecutive nodes (1F1B schedule; each stage = 2 nodes × 8 GPUs = 16 GPUs of TP). DP=2 across the remaining 2 pipeline replicas (AllReduce gradients once per step, overlapped with backprop). Total: TP×PP×DP = 8×8×2 = 128 GPUs. Memory per GPU: 530B params × 2 bytes/param BF16 = 1060 GB ÷ 128 GPUs ≈ 8.3 GB/GPU for weights alone — leaves room for optimizer state and activations with ZeRO-1. Topology mapping: TP collectives stay within NVSwitch domain (< 1 µs α); PP SendRecv crosses nodes via InfiniBand (acceptable for point-to-point; ≈ 2–5 µs). DP AllReduce crosses nodes but fires only once per step and overlaps with backprop. Failure modes to watch: (1) PP stage imbalance — if some stages have more compute (e.g., first/last have embedding layers), they become stragglers. Fix: rebalance layer assignments, profile per-stage time. (2) Pipeline bubble at M=16 microbatches — bubble ≈ (8−1)/(16+8−1) ≈ 30%. Increase M or switch to interleaved 1F1B. (3) DP AllReduce bandwidth — 530B params × 2 bytes = 1060 GB of gradients; ring AllReduce ≈ 2×1060 GB / (16 nodes × 25 GB/s IB NIC) ≈ 5.3 seconds if sequential. Must overlap with backprop using gradient bucketing; verify overlap in profiler.*
+
+---
+
+### Context & Sequence Parallelism (CP/SP)
+{: #cp-sp}
+
+At very long sequence lengths (L = 100K+), two problems arise even with TP and PP:
+1. **Activations** scale with `B · L` — a single layer's activation tensor may exceed GPU memory
+2. **Attention FLOPs** scale as `L²` — the batch cannot grow to amortise the cost because memory is already full
+
+The solution: shard the **sequence dimension** across ranks.
+
+**SP vs CP (Megatron terminology):**
+
+| | Sequence Parallelism (SP) | Context Parallelism (CP) |
+|---|---|---|
+| Scope | Targeted: shard selected activations along L to reduce redundancy in TP composition | Full: shard all inputs and activations along L |
+| What's embarrassingly parallel | Linear layers, MLPs, norms — all token-wise ops split cleanly | Same — most ops are token-wise |
+| What's hard | Attention requires cross-rank K/V access | Attention requires cross-rank K/V access |
+| Mental model | A trick to make TP cheaper; reduces activation replication | Full sequence-dimension model parallelism |
+
+**CP attention exchange — two patterns:**
+
+For CP group size N_cp, each rank owns a block of L/N_cp tokens.
+
+*Pattern A: Ring exchange (blockwise attention)*
+```
+1. Keep local Q on each rank
+2. Circulate K/V blocks around the ring (N_cp − 1 steps)
+3. Accumulate partial attention outputs with online softmax scaling
+```
+Bandwidth-efficient; exposes α per ring step. Total bytes per attention layer:
+```
+bytes_CP ≈ 2·B·L·K·H·b · (1 − 1/N_cp)    [near full KV exchange for large N_cp]
+```
+
+*Pattern B: AllGather K/V*
+```
+AllGather K/V so each rank has the full sequence and can compute attention locally.
+Memory cost: full K/V per rank — often infeasible at extreme L.
+```
+
+**Training vs serving CP:**
+- **Training**: CP introduced because B can't grow (activation memory full); shard L instead to keep GPUs busy
+- **Serving**: CP introduced because KV cache and/or prefill at extreme L don't fit on one device; different prefill and decode groups may use different CP configurations
+
+**The caveat:** CP is kernel- and layout-sensitive. The ring exchange pattern must match the attention kernel's tile structure and the KV cache format. An incompatible layout adds index shuffling overhead that erases the bandwidth benefit.
+
+> **Interview question:** You need to run prefill for a 128K-token prompt on a model where the KV cache at that length would exceed single-GPU memory even with GQA. You have 4 GPUs. How do you structure the parallelism?
+>
+> *Use CP=4 for prefill. Shard the 128K prompt into 4 blocks of 32K tokens, one per GPU. Linear layers and MLPs are embarrassingly parallel — each GPU processes its own 32K tokens independently. Attention requires K/V exchange: use ring pattern (3 hops for 4 GPUs) to circulate K/V blocks while accumulating partial attention outputs with online softmax. Each GPU holds K/V for its own 32K tokens plus one incoming block at a time — memory stays proportional to L/4 = 32K. Communication cost per attention layer: ≈ 2·B·32K·K·H·b·3 per rank (3 ring steps). After prefill completes, KV cache for the full 128K is distributed across 4 GPUs (each holds its shard). For decode: continue with CP=4 (ring attention on the cached K/V), or disaggregate — transfer the sharded KV to a dedicated decode group (possibly with smaller CP). Watch for: ring step latency at decode (batch=1 makes each step α-dominated); consider reducing CP for decode and using TP instead within the decode group.*
+
+---
+
+### Expert Parallelism (EP)
+{: #ep}
+
+MoE increases total parameters without increasing activated compute per token — but it forces a new distributed pattern: tokens must be physically routed to the ranks that host their selected experts.
+
+**Dense vs MoE dispatch:**
+- Dense FFN: every token touches all FFN weights via one large GEMM — embarrassingly local
+- MoE FFN: each token touches K_r of N_r experts, which may live on different ranks — requires AllToAll
+
+**MoE workflow under EP:**
+
+<div class="post-flow" role="group" aria-label="Expert parallelism forward pass">
+  <ol class="post-flow__list">
+    <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--blue">Router: compute top-K_r expert IDs per token (local, cheap)</span></li>
+    <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--blue">Dispatch AllToAll: send token activations to expert-owning ranks</span></li>
+    <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--blue">Expert compute: each rank runs grouped GEMMs on its assigned token batch</span></li>
+    <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--green">Combine AllToAll: return expert outputs; weighted sum with routing gates</span></li>
+  </ol>
+</div>
+
+**AllToAll communication volume:**
+```
+bytes_MoE_comm ≈ 2 · B_tok · D · b · K_r    (dispatch + combine)
+```
+
+For D=7168, b=2 (BF16), K_r=8: ≈ 229 KB per token per MoE layer. AllToAll is many-to-many — every rank sends to every other rank — making it more contention-prone than ring AllReduce and extremely topology-sensitive.
+
+**Load balancing — the straggler problem.**
+
+If the router routes more tokens to expert 0 than expert 1, rank 0 takes longer, and the AllToAll combine must wait for the slowest rank:
+
+```
+utilisation ≈ E[tokens per rank] / max(tokens per rank)
+```
+
+Poor balance → low utilisation → step time set by the slowest expert rank.
+
+**Capacity factor** bounds the worst case: each expert is allocated `capacity = ⌈cf · B_tok / N_experts⌉` slots. Tokens beyond capacity are either dropped (quality risk) or rerouted (extra compute). MoE throughput is set by worst-case load, not average.
+
+**Bias controller** for online load balancing (DeepSeek style):
+```
+# After each training step:
+if expert i overloaded:   b_i ← b_i − γ
+if expert i underloaded:  b_i ← b_i + γ
+
+# Selection: i ∈ S_t  iff  s_{i,t} + b_i ∈ Top-K_r(t)
+```
+
+Treats expert routing as a feedback control problem — pushes traffic away from hot experts without needing a large auxiliary loss coefficient.
+
+**EP in serving — decode danger zone.** During decode, B_tok is tiny (often 1–8 tokens per request). AllToAll dispatch over N_ep ranks becomes α-dominated — startup latency, not bandwidth, sets the AllToAll cost. Cross-node EP is often catastrophic for TPOT: a single layer-level AllToAll over InfiniBand adds 5–20 µs of latency that compounds across all MoE layers.
+
+Practical rule: keep EP within one NVSwitch domain when possible. If N_ep must be large, reduce it and add replicas instead.
+
+**EP failure modes:**
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| AllToAll dominates MoE layer time | Cross-node EP; α-dominated at small batch | Keep EP within node; reduce N_ep; LatentMoE (smaller payload) |
+| Expert GEMMs slow despite EP | Expert sub-batches too small for efficient GroupGEMM | Increase global batch; higher K_r; larger capacity factor |
+| Straggler on one EP rank | Router imbalance; capacity overflow | Tune bias controller γ; add auxiliary balance loss |
+| OOM with large N_r | All expert weights on few ranks | Increase N_ep; distribute experts more evenly |
+
+---
+
+### 5D Mesh Composition
+{: #5d-mesh}
+
+Real production training and serving combine all five parallelism dimensions into a process mesh:
+
+```
+N_GPUs ≈ N_dp × N_tp × N_pp × N_cp × N_ep
+```
+
+ZeRO/FSDP are policies *inside* the DP dimension (what is replicated vs sharded), not a separate mesh axis. Offloading can be viewed as a sixth knob when HBM capacity is the hard limit.
+
+**The complete parallelism cheat sheet:**
+
+| Dimension | Shards what | Primary win | Dominant collective | Where it goes |
+|---|---|---|---|---|
+| **DP** | Batch / requests | Throughput scale-out | AllReduce (train) / none (serve) | Across nodes |
+| **FSDP/ZeRO** | Training state (θ, ∇θ, m,v) | Memory capacity | AllGather + ReduceScatter | Within/across nodes |
+| **TP** | Per-layer weights/heads | Fit big layers; keep GEMMs large | AllReduce/AllGather per layer | **Within node** |
+| **PP** | Depth (layers) | Fit deep models; scale to more nodes | SendRecv (point-to-point) | Across nodes |
+| **CP/SP** | Sequence dimension | Extreme context (L > memory) | Attention ring exchange | **Within node first** |
+| **EP** | Expert parameters (MoE) | Capacity at fixed active compute | AllToAll | **Within node** |
+
+**Topology mapping rule:** Frequent-per-layer collectives (TP, EP, CP) must use the fastest available fabric. Put them within one NVSwitch domain. Infrequent-per-step collectives (DP, FSDP) can span nodes — their cost is amortised over a full optimizer step and overlapped with backprop. PP is point-to-point and can span nodes, but adds serialisation latency.
+
+**Typical recipe for 8-GPU-per-node clusters:**
+
+```
+Within node (NVLink):   TP=8 (and EP if MoE; CP if long context)
+Across nodes (IB):      PP if depth requires it
+Across node groups:     DP / FSDP with hierarchical (HSDP) collectives
+```
+
+**Hot vs cold classification:**
+
+| Collective | Hot? | Reason |
+|---|---|---|
+| TP AllReduce in decode | 🔥🔥 | Fires every layer, token-by-token; α dominates |
+| EP AllToAll in decode | 🔥🔥 | Same; cross-node is catastrophic |
+| CP ring in prefill | 🔥 | Fires every attention layer; bandwidth-heavy but amortisable |
+| PP SendRecv in decode | 🔥 | On critical decode path; adds serialisation |
+| DP AllReduce in training | ❄ | Once per step; overlapped with backprop |
+
+---
+
+### Training vs Serving Recipes
+{: #parallelism-recipes}
+
+Training and serving use the same parallelism words but optimise for opposite objectives. A strategy that maximises training throughput can actively hurt serving latency.
+
+**Training recipe (maximise tokens/sec):**
+
+<div class="post-flow" role="group" aria-label="Training parallelism configuration">
+  <ol class="post-flow__list">
+    <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--blue">Capacity: choose sharding (FSDP/TP/PP/CP) so weights + grads + optimizer + activations all fit</span></li>
+    <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--blue">Throughput: make B_tok large enough for efficient GEMMs — avoid tiny microbatches</span></li>
+    <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--blue">Topology: map TP/EP/CP on fast intra-node fabrics; push DP/PP outward</span></li>
+    <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--blue">Validate: profile overlap, stage balance (PP), router imbalance (EP)</span></li>
+    <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--green">Iterate: adjust mesh sizes, wrapping granularity, bucket sizes, micro-batch count</span></li>
+  </ol>
+</div>
+
+**Serving recipe (minimise TTFT and TPOT, maximise throughput):**
+
+<div class="post-flow" role="group" aria-label="Serving parallelism configuration">
+  <ol class="post-flow__list">
+    <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--blue">Fit: weights + KV cache + runtime buffers (TP/PP, quantisation, selective offload)</span></li>
+    <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--blue">Meet SLOs: minimise critical-path collectives on decode path (TPOT)</span></li>
+    <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--blue">Separate prefill vs decode: different CP groups, batching strategies, hardware pools</span></li>
+    <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--blue">Scale throughput: add replicas (serving "DP") with good load balancing and KV-cache-aware routing</span></li>
+    <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--green">Watch tail latency: avoid cross-node TP/EP on decode; keep groups compact</span></li>
+  </ol>
+</div>
+
+**Key differences training → serving:**
+
+| Concern | Training | Serving |
+|---|---|---|
+| Unit of work | Optimizer step (fwd + bwd + sync + update) | Request (prefill + decode) |
+| Memory dominates | θ + ∇θ + m,v + saved activations | θ + KV cache (+ runtime buffers; no optimizer) |
+| Batch size | Large (efficiency) | Variable; decode is often B=1–32 |
+| AllReduce timing | Once per step; overlapped with backprop | N/A (inference) |
+| FSDP in serving | Often a latency risk — per-layer AllGather on decode path | Prefer TP over FSDP for serving |
+| PP in serving | Tolerable bubble in training | Adds serialisation to decode critical path |
+
+> **Interview question:** You have a 70B model to deploy for interactive chat (p99 TPOT < 50ms) and a separate batch-inference workload (throughput > 5000 tokens/sec). Can you use the same parallelism configuration for both? What changes?
+>
+> *No — optimal parallelism is objective-dependent. For **interactive chat** (TPOT < 50ms): optimise for decode latency. Use TP=8 within one node (NVLink; each decode step pays 2 AllReduces/layer but α ≈ 1–2 µs on NVLink, tolerable). Avoid PP (adds stage serialisation to decode path). No FSDP (per-layer AllGather on critical path). Fit the 70B model × BF16 = 140 GB on 8× H100 (80 GB each = 640 GB total — fits with room for KV). For **batch inference** (5000 tokens/sec): optimise for throughput. Use TP=8 + PP=2 to serve on 16 GPUs per replica. Large batch sizes (B=64–256) make TP collectives bandwidth-bound rather than α-dominated — large messages benefit from NVLink bandwidth. PP bubble is acceptable because you're throughput-not-latency constrained. Use continuous batching to saturate both stages. Deploy multiple replicas for linear throughput scaling. The same TP=8 configuration works for both, but PP should be added only for the batch workload. The interactive deployment should use more, smaller replicas (each TP=8, no PP) with a load balancer — this gives better tail latency and horizontal throughput scaling than a single TP+PP configuration.*
+
+---
+
 ## Memory Optimisations
 {: #memory-optimisations}
 
@@ -1454,3 +2137,4 @@ At each step, the current decoding suffix is looked up in both trees. Candidate 
   <a href="{{ '/blogs/cuda-programming-gpu-architecture' | relative_url }}" class="post-next-title">CUDA Programming &amp; GPU Architecture →</a>
   <p class="post-next-desc">Threads, warps, shared memory, and the two-level tiling strategy that maps high-level kernels onto Streaming Multiprocessors.</p>
 </div>
+
