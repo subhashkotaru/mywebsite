@@ -54,4 +54,23 @@
       }
     });
   }
+
+  // ── Back to top ──────────────────────────────────────────────
+  const backToTop = document.getElementById('backToTop');
+
+  if (backToTop) {
+    function updateBackToTop() {
+      const isVisible = window.scrollY > 320;
+      backToTop.classList.toggle('is-visible', isVisible);
+      backToTop.setAttribute('aria-hidden', String(!isVisible));
+      backToTop.tabIndex = isVisible ? 0 : -1;
+    }
+
+    backToTop.addEventListener('click', function () {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+
+    window.addEventListener('scroll', updateBackToTop, { passive: true });
+    updateBackToTop();
+  }
 })();
