@@ -110,7 +110,7 @@ LLM inference is fundamentally different from training. The forward pass through
 
 The A100's **roofline** (where compute and bandwidth are equally saturated) is ~312 TFLOPS / 2 TB/s = 156 FLOP/byte. Decode at batch size 1 runs at intensity 2 — 78× below the roofline. You're using 1.3% of compute capacity. Only at batch size 78 do you hit the roofline and become compute-bound.
 
-This analysis drives the entire optimisation landscape: reduce bytes per weight (quantisation), reuse loaded weights across more tokens (larger batches), reduce the number of weight reads (speculative decoding), and cut memory traffic within a forward pass (FlashAttention, kernel fusion).
+This analysis drives the entire optimisation landscape: reduce bytes per weight (quantisation), reuse loaded weights across more tokens (larger batches), reduce the number of weight reads (speculative decoding), and cut memory traffic within a forward pass ([FlashAttention](https://arxiv.org/abs/2205.14135), kernel fusion).
 
 <div class="post-flow post-flow--horizontal" role="group" aria-label="Three inference bottlenecks">
   <ol class="post-flow__list post-flow__list--row">
@@ -592,7 +592,7 @@ That's 208 GB of memory *and* 208 GB of bandwidth consumed per decode step, per 
 | **GQA/MQA** (head-space sharing) | Reduce N_KV (fewer KV heads) | KV bytes ∝ N_KV/N | Head-space representation unchanged |
 | **MLA** (latent-space caching) | Cache a compressed latent, reconstruct heads on demand | Cache dc+d_hR ≪ N_KV×H | Full head-space quality (via reconstruction) |
 
-**GQA/MQA — head-space sharing:**
+**[GQA](https://arxiv.org/abs/2305.13245)/MQA — head-space sharing:**
 
 Query heads stay at N. KV heads reduce to N_KV ≪ N (each KV head shared across a group of query heads). KV cache bytes drop by factor N_KV/N:
 
@@ -602,7 +602,7 @@ KV bytes (GQA) ≈ 2 × L × n_layers × N_KV × H × b
 
 MQA is the extreme: N_KV=1, one KV head shared across all N query heads. GQA with N_KV=8 (used in Llama-3, Mistral) is the practical sweet spot — ~16× KV reduction at negligible quality loss.
 
-**MLA — latent-space caching:**
+**[MLA](https://arxiv.org/abs/2405.04434) — latent-space caching:**
 
 Instead of caching K and V in head-space, MLA caches a compressed **content latent** c_t ∈ ℝ^d_c and a small **RoPE component** r_t ∈ ℝ^d_hR per token per layer. At attention time, head-space K and V are reconstructed:
 
@@ -883,7 +883,7 @@ The KV cache stores attention keys and values for all previous tokens so decodin
 
 In practice, pre-allocation wastes 60–80% of GPU KV memory. This directly limits the batch size — fewer concurrent requests means lower throughput.
 
-**PagedAttention** applies OS virtual memory concepts. Physical GPU memory is divided into fixed-size **KV blocks** (typically 16–32 tokens per block). Each request holds a **block table** — a mapping from logical block index to physical block number — rather than a contiguous reservation. Blocks are allocated on demand as the sequence grows, one block at a time:
+**[PagedAttention](https://arxiv.org/abs/2309.06180)** applies OS virtual memory concepts. Physical GPU memory is divided into fixed-size **KV blocks** (typically 16–32 tokens per block). Each request holds a **block table** — a mapping from logical block index to physical block number — rather than a contiguous reservation. Blocks are allocated on demand as the sequence grows, one block at a time:
 
 <div class="post-flow" role="group" aria-label="PagedAttention allocation">
   <ol class="post-flow__list">
@@ -909,7 +909,7 @@ Maximum internal fragmentation is now `block_size - 1` tokens per request. Exter
 
 Many requests share a common prefix: a system prompt, a fixed few-shot preamble, or a shared conversation history. Without caching, each new request recomputes KV for the entire prefix from scratch — O(L²) attention for a prefix of length L, repeated for every request.
 
-**RadixAttention** (SGLang) maintains a global LRU cache of KV blocks organised as a **radix tree** (compact prefix trie keyed by token sequence). On request arrival:
+**[RadixAttention](https://arxiv.org/abs/2312.07104)** (SGLang) maintains a global LRU cache of KV blocks organised as a **radix tree** (compact prefix trie keyed by token sequence). On request arrival:
 
 1. Hash the incoming token sequence prefix
 2. Walk the radix tree from root — each node represents a cached block matching a token sub-sequence
@@ -940,7 +940,7 @@ When context exceeds the KV cache budget, entries must be evicted. The question 
 
 **Why not just truncate old tokens?** The "sliding window" approach — drop tokens beyond a fixed recency window — is simple but destroys long-range dependencies. A question about something mentioned 10,000 tokens ago gets a wrong answer because the relevant KV was evicted.
 
-**H₂O (Heavy Hitter Oracle)** uses attention scores as an importance signal. Tokens that receive high cumulative attention across recent decoding steps are "heavy hitters" — the model consistently routes attention to them. H₂O maintains a running estimate of cumulative attention per token and evicts the lowest-scoring entries when the budget is exceeded:
+**[H₂O (Heavy Hitter Oracle)](https://arxiv.org/abs/2306.14048)** uses attention scores as an importance signal. Tokens that receive high cumulative attention across recent decoding steps are "heavy hitters" — the model consistently routes attention to them. H₂O maintains a running estimate of cumulative attention per token and evicts the lowest-scoring entries when the budget is exceeded:
 
 ```
 importance[i] += attention_score[current_step, i]   # update for each decode step
@@ -949,9 +949,9 @@ when budget exceeded: evict argmin(importance)
 
 H₂O also observes the **attention sink** phenomenon: the first 1–4 tokens always receive disproportionately high attention regardless of their content (the model routes "background" attention to the beginning). These sink tokens are always protected from eviction.
 
-**StreamingLLM** makes the attention sink insight its core mechanism: always keep sink tokens (first 4) + a sliding window of recent tokens (last W). This enables **infinite-length streaming generation** at fixed KV memory — never more than W+4 tokens in the cache. The cost: all mid-context information beyond the sliding window is lost. Accurate only when the task doesn't require long-range dependencies (streaming summarisation of a live transcript, for example).
+**[StreamingLLM](https://arxiv.org/abs/2309.17453)** makes the attention sink insight its core mechanism: always keep sink tokens (first 4) + a sliding window of recent tokens (last W). This enables **infinite-length streaming generation** at fixed KV memory — never more than W+4 tokens in the cache. The cost: all mid-context information beyond the sliding window is lost. Accurate only when the task doesn't require long-range dependencies (streaming summarisation of a live transcript, for example).
 
-**SnapKV** clusters key vectors to identify which tokens encode similar information, then evicts one representative from each cluster — avoiding redundant KV entries. Works well when long contexts have repeated or paraphrased information (documents with repetitive structure).
+**[SnapKV](https://arxiv.org/abs/2404.14469)** clusters key vectors to identify which tokens encode similar information, then evicts one representative from each cluster — avoiding redundant KV entries. Works well when long contexts have repeated or paraphrased information (documents with repetitive structure).
 
 > **Interview question:** H₂O uses cumulative attention scores to decide which KV entries to evict. But attention scores change every decode step — a token ignored early might become critical later. Is cumulative attention a good proxy for future importance?
 >
@@ -1024,7 +1024,7 @@ Each iteration has bounded duration — no single step dominates. Decode TBT sta
 ## Speculative Decoding
 {: #speculative}
 
-**The core insight.** LLM inference is memory-bandwidth-bound: the GPU loads 140 GB of weights to produce a single token while using ~2% of compute capacity. If we can verify `γ` draft tokens in a single LLM forward pass, we get `γ` tokens per memory load instead of 1 — a theoretical `γ×` speedup. The challenge: verification must be lossless (identical output distribution to sampling from the LLM alone).
+**The core insight.** LLM inference is memory-bandwidth-bound: the GPU loads 140 GB of weights to produce a single token while using ~2% of compute capacity. If we can verify `γ` draft tokens in a single LLM forward pass, we get `γ` tokens per memory load instead of 1 — a theoretical `γ×` speedup. The challenge: verification must be lossless (identical output distribution to sampling from the LLM alone). This is the core idea behind [Speculative Decoding](https://arxiv.org/abs/2211.17192).
 
 ### Draft-Verify
 {: #draft-verify}
@@ -1054,9 +1054,9 @@ For each position i:
 
 **SpecInfer** extends to **tree-based speculation**: instead of a single draft sequence, multiple SSMs generate different draft sequences, merged into a token tree. Each path from root to leaf is a possible continuation. The LLM verifies the entire tree in one forward pass using **tree attention** — a causal mask shaped like the tree topology, so each node attends only to its ancestors in the tree. All paths are verified simultaneously; the deepest accepted prefix across all paths is the output. This can accept up to `max_tree_depth` tokens per LLM call.
 
-**EAGLE** tightens the draft model design: it reuses the main LLM's embedding matrix and LM head (no separate model to load), adding only a single shallow attention layer trained to predict the LLM's next feature (hidden state), not the token. EAGLE then samples `K` candidate tokens per position and builds a dynamic tree based on accumulated path likelihood, rejecting low-probability paths before verification.
+**[EAGLE](https://arxiv.org/abs/2401.15077)** tightens the draft model design: it reuses the main LLM's embedding matrix and LM head (no separate model to load), adding only a single shallow attention layer trained to predict the LLM's next feature (hidden state), not the token. EAGLE then samples `K` candidate tokens per position and builds a dynamic tree based on accumulated path likelihood, rejecting low-probability paths before verification.
 
-**Medusa** adds multiple auxiliary decoding heads directly to the LLM — no separate model at all. Head 0 predicts the next token (standard), head 1 predicts the token 2 steps ahead, head 2 predicts 3 steps ahead, etc. All heads run in parallel on the current hidden state. Verified suffixes extend the output. Medusa trades some accuracy in multi-step prediction for zero model-loading overhead.
+**[Medusa](https://arxiv.org/abs/2401.10774)** adds multiple auxiliary decoding heads directly to the LLM — no separate model at all. Head 0 predicts the next token (standard), head 1 predicts the token 2 steps ahead, head 2 predicts 3 steps ahead, etc. All heads run in parallel on the current hidden state. Verified suffixes extend the output. Medusa trades some accuracy in multi-step prediction for zero model-loading overhead.
 
 > **Interview question:** Speculative decoding's speedup depends on the draft acceptance rate. What determines acceptance rate, and how would you choose an SSM for a given LLM?
 >
@@ -1133,7 +1133,7 @@ The **online softmax** identity allows correct normalisation without storing the
 
 **The single-query bottleneck.** FlashAttention parallelises across the query dimension — it's fast when there are many query tokens (prefill phase). During autoregressive decode, there is exactly one new query token. All the K/V sequence of length N must be processed serially by a single kernel. At N=32k tokens, this is a slow sequential scan.
 
-**Flash-Decoding** parallelises the K/V dimension instead. Split the K/V sequence into `P` chunks; assign each chunk to a separate CUDA thread block:
+**[Flash-Decoding](https://arxiv.org/abs/2311.01282)** parallelises the K/V dimension instead. Split the K/V sequence into `P` chunks; assign each chunk to a separate CUDA thread block:
 
 ```
 Thread block i processes K[i*chunk_size : (i+1)*chunk_size], V[...]
@@ -1215,9 +1215,9 @@ Running both on the same GPUs forces compromises: decode batches are interrupted
 
 **The KV transfer bottleneck.** After prefill completes, the KV cache (prompt_len × n_layers × 2 × n_heads × d_head bytes) must be transferred from the prefill GPU to the decode GPU. For a 1000-token prompt in a 70B model: 1000 × 96 × 2 × 8 × 128 × 2 bytes = ~393MB. Over NVLink (112 GB/s): 3.5ms. Over PCIe between nodes (32 GB/s): 12ms. Over RDMA (100 GbE, ~12 GB/s): 33ms. This transfer latency adds directly to TTFT and can dominate if network bandwidth is insufficient.
 
-**DistServe** pipelines the KV transfer: as the prefill GPU generates KV entries layer by layer, it streams each layer's KV to the decode GPU before the next layer is computed. The decode GPU can start decoding as soon as the final layer's KV arrives — overlapping transfer with prefill computation. This hides most of the transfer latency.
+**[DistServe](https://arxiv.org/abs/2401.09670)** pipelines the KV transfer: as the prefill GPU generates KV entries layer by layer, it streams each layer's KV to the decode GPU before the next layer is computed. The decode GPU can start decoding as soon as the final layer's KV arrives — overlapping transfer with prefill computation. This hides most of the transfer latency.
 
-**Splitwise** takes a more radical approach: prefill GPUs are GPU-rich (high compute), decode GPUs are memory-bandwidth-rich. Different hardware SKUs optimised for each phase. The routing system assigns each incoming request to a prefill GPU, executes prefill, transfers KV, hands off to a decode GPU pool. Reported 2–3× throughput improvement over co-located serving.
+**[Splitwise](https://arxiv.org/abs/2311.18677)** takes a more radical approach: prefill GPUs are GPU-rich (high compute), decode GPUs are memory-bandwidth-rich. Different hardware SKUs optimised for each phase. The routing system assigns each incoming request to a prefill GPU, executes prefill, transfers KV, hands off to a decode GPU pool. Reported 2–3× throughput improvement over co-located serving.
 
 **When disaggregation isn't worth it.** The KV transfer adds engineering complexity and TTFT latency. For short prompts (< 200 tokens), prefill is cheap and the transfer overhead dominates. For applications that are latency-sensitive on TTFT rather than TBT (search, where the first response matters most), disaggregation may hurt. Best suited for: long-context RAG applications, document processing, and chat where users tolerate slightly higher TTFT for dramatically better TBT.
 
@@ -1307,7 +1307,7 @@ Depth pruning is faster at inference because it reduces the sequential depth of 
 ### Minitron: Prune Then Distill
 {: #minitron}
 
-**The key insight.** Pruning alone leaves a degraded model. Training from scratch produces a well-optimised model but costs 15–25T tokens. Minitron combines both: prune aggressively, then recover with distillation on just 100–400B tokens. The compressed model inherits the large model's learned representations as a starting point, so recovery is fast.
+**The key insight (from the [Minitron](https://arxiv.org/abs/2408.11796) paper).** Pruning alone leaves a degraded model. Training from scratch produces a well-optimised model but costs 15–25T tokens. Minitron combines both: prune aggressively, then recover with distillation on just 100–400B tokens. The compressed model inherits the large model's learned representations as a starting point, so recovery is fast.
 
 **Five-step Minitron methodology:**
 
@@ -1334,7 +1334,7 @@ Depth pruning is faster at inference because it reduces the sequential depth of 
 
 **The problem with the pruning-per-model approach.** Even with Minitron's 53× cost reduction, you still run a separate pruning+distillation pass for each target size. If deployment requirements change (new hardware, different latency budget, unexpected load), you start over. Elastic models solve this differently: train **one model that contains many sizes**.
 
-**Flextron's core idea.** Starting from a pretrained model (e.g. LLaMA-3-8B):
+**[Flextron](https://arxiv.org/abs/2406.10260)'s core idea.** Starting from a pretrained model (e.g. LLaMA-3-8B):
 
 1. **Permute** attention heads, MLP channels, and hidden dimensions by importance — most important first.
 2. **Elastic continued training** (using ~5% of original training tokens): train a router jointly with the model. The router selects a sub-architecture for each forward pass given a latency or parameter constraint.
@@ -1361,7 +1361,7 @@ The router adjusts `n_layers`, `hidden_size`, `n_heads`, and `MLP_width` dynamic
 
 **Why NAS matters post-training.** Even after choosing a pruning ratio, there are thousands of valid architectures at a given parameter count — different numbers of layers, heads, MLP ratios, attention types. LANA and Puzzle are two approaches to efficiently searching this space **after a model is trained**, rather than during training.
 
-**LANA (Latency Aware Network Acceleration).** Given a trained model and a target constraint (latency, memory, or cost), LANA:
+**[LANA](https://arxiv.org/abs/2209.01104) (Latency Aware Network Acceleration).** Given a trained model and a target constraint (latency, memory, or cost), LANA:
 
 1. Identifies "training-friendly" operations in the trained model (standard GELU, full multi-head attention)
 2. Swaps them for hardware-friendly alternatives (ReLU, GQA, Flash Attention, SWA) that satisfy the constraint
@@ -1370,7 +1370,7 @@ The router adjusts `n_layers`, `hidden_size`, `n_heads`, and `MLP_width` dynamic
 
 The key insight: the trained model's weights are "close" to the optimal weights for the new architecture, so only a short recovery fine-tune is needed. Block-level distillation (MSE on per-block outputs) provides strong supervision without cross-layer gradient propagation — cheap because each block's distillation is independent.
 
-**Puzzle: NAS as a Knapsack Problem.** Puzzle scales NAS to 70B+ models by decomposing the search into:
+**[Puzzle](https://arxiv.org/abs/2411.19184): NAS as a Knapsack Problem.** Puzzle scales NAS to 70B+ models by decomposing the search into:
 
 1. **Score each block variant independently** (replace just one block at a time, measure MMLU/KL divergence). This done-once scoring is the expensive step, but only runs once per parent model.
 2. **Relax the global score** as a sum of per-block scores — a simplification that makes the search tractable.
@@ -1473,9 +1473,9 @@ Chunk too little     → one giant prefill destroys tail ITL for all concurrent 
 
 | Framework | Think of it as | Core strengths | Best fit | Watch-outs |
 |---|---|---|---|---|
-| **vLLM** | General open engine | Broad model support, PagedAttention, community ecosystem, strong scheduler | Research-to-production, many model families | May not peak on a single NVIDIA path |
-| **SGLang** | Frontier-traffic engine | RadixAttention, PD disaggregation as first-class, large-scale EP, HiCache, cache-aware gateway | MoE/reasoning at scale, frontier deployments | Evolving; large operational surface |
-| **TensorRT-LLM** | NVIDIA-specialised runtime | Peak NVIDIA kernel stack, overlap scheduler, FP8/FP4 support, AutoDeploy graph transformation | NVIDIA-only production, max throughput on Hopper/Blackwell | Less portable; some feature combinations in beta |
+| **[vLLM](https://github.com/vllm-project/vllm)** | General open engine | Broad model support, PagedAttention, community ecosystem, strong scheduler | Research-to-production, many model families | May not peak on a single NVIDIA path |
+| **[SGLang](https://github.com/sgl-project/sglang)** | Frontier-traffic engine | RadixAttention, PD disaggregation as first-class, large-scale EP, HiCache, cache-aware gateway | MoE/reasoning at scale, frontier deployments | Evolving; large operational surface |
+| **[TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM)** | NVIDIA-specialised runtime | Peak NVIDIA kernel stack, overlap scheduler, FP8/FP4 support, AutoDeploy graph transformation | NVIDIA-only production, max throughput on Hopper/Blackwell | Less portable; some feature combinations in beta |
 | **NVIDIA Dynamo** | Distributed control plane | GPU resource planner, smart KV-aware router, low-latency KV transfer, multi-tier KV manager | Multi-node reasoning model serving | Needs a runtime engine underneath; operational complexity |
 | **LMCache** | KV tier / extension | Cross-query KV reuse, host-offload persistence, cross-engine KV transfer, composable with vLLM/SGLang | Cache-heavy workloads, long-context RAG, PD systems | Only helps if workload has reusable KV |
 
@@ -1491,7 +1491,7 @@ Chunk too little     → one giant prefill destroys tail ITL for all concurrent 
 
 **SGLang distinctive features:**
 - **RadixAttention**: a radix-tree-indexed KV cache enabling O(prefix_length) lookup for cache hits. Requests sharing prefixes share KV blocks — key for agentic workloads where tool descriptions are repeated across thousands of calls.
-- **HiCache**: hierarchical KV caching beyond GPU memory. Hot pages in HBM, warm pages spilled to host DRAM, cold reusable history in remote or disk-backed stores. Reported 6× throughput improvement and large TTFT reductions for long-session workloads.
+- **[HiCache](https://arxiv.org/abs/2503.16893)**: hierarchical KV caching beyond GPU memory. Hot pages in HBM, warm pages spilled to host DRAM, cold reusable history in remote or disk-backed stores. Reported 6× throughput improvement and large TTFT reductions for long-session workloads.
 - **Large-scale EP**: expert parallelism at the scale where all-to-all becomes the binding constraint. SGLang pairs EP with PD disaggregation to keep expert dispatch efficient during decode.
 
 **TensorRT-LLM AutoDeploy.** Takes a model in ordinary PyTorch/HuggingFace form and automatically extracts a computation graph, applies sharding, quantisation, KV integration, layer fusion, and CUDA-graph-friendly rewriting. Reduces the engineering tax from "research model" to "tuned deployment" — no manual graph surgery required.
@@ -1544,7 +1544,7 @@ Warm pages   → host DRAM   (2-5× cheaper, ~5-10× slower fetch)
 Cold history → remote/SSD  (cheapest, high rehydrate latency)
 ```
 
-The challenge: rehydrate latency can destroy TTFT if a cold-cache request needs 1GB of KV fetched from SSD before decoding can begin. HiCache and LMCache solve this with prefetch policies (predict which KV will be needed before the request arrives based on prefix hashes), tiered eviction (keep recently-accessed and high-hit-rate prefixes warm), and pipelining (overlap KV rehydration with prefill computation).
+The challenge: rehydrate latency can destroy TTFT if a cold-cache request needs 1GB of KV fetched from SSD before decoding can begin. HiCache and [LMCache](https://arxiv.org/abs/2410.03065) solve this with prefetch policies (predict which KV will be needed before the request arrives based on prefix hashes), tiered eviction (keep recently-accessed and high-hit-rate prefixes warm), and pipelining (overlap KV rehydration with prefill computation).
 
 > **Interview question:** Your long-context serving system uses hierarchical KV caching (HBM → host → remote). A user submits a 200K-token document that they've submitted before. Walk through what happens and where the performance bottleneck likely is.
 >

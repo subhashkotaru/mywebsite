@@ -208,7 +208,7 @@ The four questions every inference engineer asks:
 3. How do we batch without breaking user experience (chunked prefill, continuous batching)?
 4. What happens when context length grows (KV cache pressure, disaggregation)?
 
-Tools: compilation/graph capture (Dynamo), quantisation (TRT-LLM), decoding engines (vLLM, SGLang).
+Tools: compilation/graph capture (Dynamo), quantisation (TRT-LLM), decoding engines ([vLLM](https://github.com/vllm-project/vllm), [SGLang](https://github.com/sgl-project/sglang)).
 
 Artifact: a production serving configuration, often with quantised variants per SLO tier.
 
@@ -787,7 +787,7 @@ LLM inference generates tokens one at a time — each new token attends to **all
 
 **KV cache**: store K and V tensors from all past tokens so each decoding step only computes the new token's Q and reads cached K/V. Tradeoff: memory grows linearly with sequence length and batch size — a 70B model with a 32k context and batch size 32 can consume hundreds of GB just for the KV cache.
 
-**FlashAttention in decoding** doesn't apply directly: with a single query there is no parallelism across queries, and the kernel must scan all keys/values **sequentially** — inefficient when the context is long.
+**[FlashAttention](https://arxiv.org/abs/2205.14135) in decoding** doesn't apply directly: with a single query there is no parallelism across queries, and the kernel must scan all keys/values **sequentially** — inefficient when the context is long.
 
 ### Flash-Decoding
 {: #flash-decoding}
@@ -1885,7 +1885,7 @@ Adapters achieve comparable accuracy to full fine-tuning with far fewer trainabl
 ### LoRA
 {: #lora}
 
-**LoRA (Low-Rank Adaptation)** avoids adding new layers by reparameterising the weight update instead. For a weight matrix `W ∈ ℝᵈˣᵈ`, the update `ΔW` during fine-tuning is hypothesised to lie in a low-rank subspace. LoRA factors it as:
+**[LoRA](https://arxiv.org/abs/2106.09685) (Low-Rank Adaptation)** avoids adding new layers by reparameterising the weight update instead. For a weight matrix `W ∈ ℝᵈˣᵈ`, the update `ΔW` during fine-tuning is hypothesised to lie in a low-rank subspace. LoRA factors it as:
 
 ```
 ΔW = B × A,   B ∈ ℝᵈˣʳ, A ∈ ℝʳˣᵈ,   r ≪ d
@@ -1917,7 +1917,7 @@ LoRA is typically applied to the query and value projection matrices in attentio
 ### QLoRA
 {: #qlora}
 
-LoRA reduces trainable parameters but the frozen base model weights still consume memory in fp16. **QLoRA** quantises the frozen weights to 4 bits, cutting base model memory by 4×, while keeping the LoRA adapter weights and activations in fp16 for stable training.
+LoRA reduces trainable parameters but the frozen base model weights still consume memory in fp16. **[QLoRA](https://arxiv.org/abs/2305.14314)** quantises the frozen weights to 4 bits, cutting base model memory by 4×, while keeping the LoRA adapter weights and activations in fp16 for stable training.
 
 Naive 4-bit quantisation wastes bins when the weight distribution has large outliers. QLoRA addresses this with two levels of quantisation:
 
@@ -2019,7 +2019,7 @@ Continuous batching fixes GPU utilisation. The next bottleneck is memory: the KV
 
 In practice, only 20–40% of allocated KV cache memory holds actual token states.
 
-**PagedAttention** (vLLM) borrows the OS virtual memory abstraction and applies it to KV cache. Physical GPU memory is divided into fixed-size **KV blocks** (e.g. 4 tokens per block). Each request gets a **block table** — a mapping from logical block index to physical block number — rather than a contiguous reservation.
+**[PagedAttention](https://arxiv.org/abs/2309.06180)** (vLLM) borrows the OS virtual memory abstraction and applies it to KV cache. Physical GPU memory is divided into fixed-size **KV blocks** (e.g. 4 tokens per block). Each request gets a **block table** — a mapping from logical block index to physical block number — rather than a contiguous reservation.
 
 <div class="post-flow" role="group" aria-label="PagedAttention memory layout">
   <ol class="post-flow__list">
@@ -2043,7 +2043,7 @@ Attention computation with a block table works because **attention is associativ
 
 PagedAttention handles one request's KV cache efficiently. But across requests, there is often massive redundancy: many requests share a common system prompt, few-shot examples, or conversation prefix. Standard serving systems discard the KV cache when a request finishes and recompute it from scratch for every new request — even if the prefix is identical.
 
-**RadixAttention** (SGLang) maintains a global **LRU cache of KV blocks** organised as a **radix tree** (a compact prefix tree). The key of each tree node is a token sequence; the value is the cached KV block for that sequence. When a new request arrives, the scheduler performs a longest-prefix match against the tree. Any matched prefix is loaded directly from cache, skipping the prefill computation for those tokens entirely.
+**[RadixAttention](https://arxiv.org/abs/2312.07104)** (SGLang) maintains a global **LRU cache of KV blocks** organised as a **radix tree** (a compact prefix tree). The key of each tree node is a token sequence; the value is the cached KV block for that sequence. When a new request arrives, the scheduler performs a longest-prefix match against the tree. Any matched prefix is loaded directly from cache, skipping the prefill computation for those tokens entirely.
 
 <div class="post-flow" role="group" aria-label="RadixAttention prefix sharing">
   <ol class="post-flow__list">
@@ -2061,7 +2061,7 @@ This is especially effective for multi-turn chat (each turn shares the full conv
 ### Speculative Decoding
 {: #speculative-decoding}
 
-All techniques so far improve *throughput* — more requests per second. **Speculative decoding** attacks a different problem: reducing *latency* for individual requests by exploiting the fact that LLM inference is memory-bandwidth-bound, not compute-bound.
+All techniques so far improve *throughput* — more requests per second. **[Speculative decoding](https://arxiv.org/abs/2211.17192)** attacks a different problem: reducing *latency* for individual requests by exploiting the fact that LLM inference is memory-bandwidth-bound, not compute-bound.
 
 The bottleneck: at decode time the GPU must load all model weights from HBM on every step just to produce one token. Compute utilisation for a 70B model on 4 A100s with 4K context is only ~2%, while memory bandwidth is near saturation. The GPU is doing almost no arithmetic relative to its capability.
 

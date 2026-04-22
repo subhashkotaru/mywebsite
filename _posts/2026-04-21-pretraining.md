@@ -29,6 +29,13 @@ tags: [ml-systems, pretraining, llm, scaling]
         <li><a href="#normalisation">Normalisation</a></li>
       </ul>
     </li>
+    <li><a href="#init-loss-reg">Initialisation, Loss & Regularisation</a>
+      <ul class="post-toc-sublist">
+        <li><a href="#weight-init">Weight Initialisation (Xavier & He)</a></li>
+        <li><a href="#loss-functions">Loss Functions</a></li>
+        <li><a href="#dropout-reg">Dropout & Regularisation</a></li>
+      </ul>
+    </li>
     <li><a href="#optimiser">Optimiser & Training Stability</a>
       <ul class="post-toc-sublist">
         <li><a href="#adam">AdamW</a></li>
@@ -45,6 +52,15 @@ tags: [ml-systems, pretraining, llm, scaling]
         <li><a href="#shampoo">Shampoo</a></li>
         <li><a href="#muon">Muon</a></li>
         <li><a href="#mup">Maximal Update Parameterisation (muP)</a></li>
+      </ul>
+    </li>
+    <li><a href="#token-sampling">Token Sampling & Decoding</a>
+      <ul class="post-toc-sublist">
+        <li><a href="#greedy-beam">Greedy & Beam Search</a></li>
+        <li><a href="#temperature">Temperature Scaling</a></li>
+        <li><a href="#topk-topp">Top-k & Top-p (Nucleus)</a></li>
+        <li><a href="#minp">min-p Sampling</a></li>
+        <li><a href="#sampling-tradeoffs">Tradeoffs & Practical Guide</a></li>
       </ul>
     </li>
     <li><a href="#scaling-laws">Scaling Laws</a></li>
@@ -120,7 +136,7 @@ Raw web crawl data contains spam, duplicates, low-quality boilerplate, and toxic
   <ol class="post-flow__list">
     <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--blue">Language detection — keep target languages, discard others</span></li>
     <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--blue">Heuristic filters — min/max length, punctuation ratio, repeated n-gram ratio</span></li>
-    <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--blue">Deduplication — exact and near-duplicate removal via MinHash LSH + suffix arrays</span></li>
+    <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--blue">Deduplication — exact and near-duplicate removal via [MinHash](https://arxiv.org/abs/2107.06499) LSH + suffix arrays</span></li>
     <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--blue">Quality scoring — classifier trained on curated (Wikipedia/books) vs raw web text</span></li>
     <li class="post-flow__step"><span class="post-flow__bar post-flow__bar--green">Toxicity filtering — harmful content removed with classifier or keyword lists</span></li>
   </ol>
@@ -190,7 +206,7 @@ The training data is just text — no labels needed. Every token in the sequence
 ### Masked Language Modelling
 {: #mlm}
 
-**Masked language modelling (MLM)** — used by BERT and encoder-only models — randomly masks 15% of input tokens and trains the model to predict the masked values. Unlike CLM, the model sees full bidirectional context around each mask:
+**Masked language modelling (MLM)** — used by [BERT](https://arxiv.org/abs/1810.04805) and encoder-only models — randomly masks 15% of input tokens and trains the model to predict the masked values. Unlike CLM, the model sees full bidirectional context around each mask:
 
 ```
 Input:  "The cat [MASK] on the mat"
@@ -210,7 +226,7 @@ MLM produces better representations for classification and extraction tasks (ful
 ## Model Architecture
 {: #architecture}
 
-All modern LLMs are built on the **transformer** architecture. The design choices made during pretraining become fixed — they cannot be changed without retraining from scratch. Every architectural decision is a trade-off between expressivity, memory, and compute.
+All modern LLMs are built on the **[transformer](https://arxiv.org/abs/1706.03762)** architecture. The design choices made during pretraining become fixed — they cannot be changed without retraining from scratch. Every architectural decision is a trade-off between expressivity, memory, and compute.
 
 ### Transformer Block
 {: #transformer-block}
@@ -313,13 +329,257 @@ The practical evidence: pre-norm models train stably at 96+ layers without learn
 
 ---
 
+## Initialisation, Loss & Regularisation
+{: #init-loss-reg}
+
+### Weight Initialisation: Xavier & He
+{: #weight-init}
+
+Weight initialisation sets the scale of parameters before any gradient updates. The goal: keep activation variance and gradient variance roughly constant across layers at the start of training — too small and gradients vanish, too large and they explode.
+
+**The variance propagation problem.** In a linear layer $y = Wx$ where $W \in \mathbb{R}^{d_\text{out} \times d_\text{in}}$, if each weight $w_{ij} \sim \mathcal{N}(0, \sigma^2)$ and inputs are zero-mean with variance $\text{Var}(x_i)$:
+
+$$\text{Var}(y_j) = d_\text{in} \cdot \sigma^2 \cdot \text{Var}(x_i)$$
+
+For variance to be preserved ($\text{Var}(y) = \text{Var}(x)$), we need $\sigma^2 = 1/d_\text{in}$.
+
+**Xavier (Glorot) initialisation** ([Glorot & Bengio 2010](http://proceedings.mlr.press/v9/glorot10a.html)) — designed for linear activations and tanh/sigmoid:
+
+$$\sigma^2 = \frac{2}{d_\text{in} + d_\text{out}}$$
+
+or equivalently uniform $U\!\left[-\sqrt{\frac{6}{d_\text{in}+d_\text{out}}},\; \sqrt{\frac{6}{d_\text{in}+d_\text{out}}}\right]$
+
+The $d_\text{in} + d_\text{out}$ denominator is a compromise: the forward pass wants $1/d_\text{in}$ (keep $\text{Var}(y) = \text{Var}(x)$) and the backward pass wants $1/d_\text{out}$ (keep gradient variance constant). Xavier averages the two.
+
+**He (Kaiming) initialisation** ([He et al. 2015](https://arxiv.org/abs/1502.01852)) — designed for ReLU and its variants:
+
+$$\sigma^2 = \frac{2}{d_\text{in}}$$
+
+Why the factor of 2? ReLU zeros out negative activations, halving the effective variance. The factor of 2 compensates for this. Without it, activations shrink by $\sqrt{2}$ per layer — in a 50-layer network, that's $2^{-25}$ attenuation.
+
+For Leaky ReLU with slope $\alpha$:
+
+$$\sigma^2 = \frac{2}{(1 + \alpha^2)\, d_\text{in}}$$
+
+**Comparison:**
+
+| Initialisation | Formula | Designed for | Problem it solves |
+|---|---|---|---|
+| **Xavier (uniform)** | $U\!\left[-\sqrt{6/(d_\text{in}+d_\text{out})},\; \sqrt{6/(d_\text{in}+d_\text{out})}\right]$ | Tanh, sigmoid, linear | Forward + backward variance preservation |
+| **Xavier (normal)** | $\mathcal{N}(0,\; 2/(d_\text{in}+d_\text{out}))$ | Tanh, sigmoid, linear | Same; normal version |
+| **He (Kaiming)** | $\mathcal{N}(0,\; 2/d_\text{in})$ | ReLU, Leaky ReLU | Compensates for ReLU dead half |
+| **LeCun** | $\mathcal{N}(0,\; 1/d_\text{in})$ | SELU | Requires specific activation + architecture |
+
+**Bias initialisation:** almost always zeros — the bias does not affect variance propagation. Exception: output gate bias in LSTMs is sometimes initialised to 1 to encourage open gates early in training.
+
+**In practice:** PyTorch default is Kaiming uniform for `nn.Linear`. For transformers, a common addition is scaling output projection weights by $1/\sqrt{2L}$ where $L$ is the number of layers — this keeps the residual stream variance stable at initialisation.
+
+> **Interview question:** A 50-layer MLP using ReLU activations and Xavier initialisation has vanishing activations in the forward pass. Why, and how do you fix it?
+>
+> *Xavier was derived assuming linear (or symmetric) activations. ReLU zeros half the activation distribution — the effective fan-in that propagates signal is only $d_\text{in}/2$, not $d_\text{in}$. So Xavier's $\sigma^2 = 2/(d_\text{in}+d_\text{out})$ is too small by a factor of ~2. After 50 layers, activations decay by $(\approx 0.5)^{50/2} \approx 2^{-25}$, effectively zero. Fix: use He initialisation ($\sigma^2 = 2/d_\text{in}$). The factor of 2 exactly compensates for ReLU's expected variance halving.*
+
+---
+
+### Loss Functions
+{: #loss-functions}
+
+The loss function defines what the model is trained to optimise — a wrong choice leads to wrong gradients, poor convergence, or a model that optimises the wrong objective. Every loss has a probabilistic interpretation as a negative log-likelihood under some noise model.
+
+**Autoregressive pretraining loss.** LLMs are trained with cross-entropy over the vocabulary at each position — the loss is the negative log-probability of the correct next token:
+
+$$\mathcal{L}_\text{CLM} = -\frac{1}{T} \sum_{t=1}^T \log p_\theta(x_t \mid x_{<t})$$
+
+This is the standard training objective for GPT-style models.
+
+#### Classification Losses
+
+**Cross-entropy (categorical).** For $M$ classes with one-hot target $y$ and softmax probabilities $p$:
+
+$$\mathcal{L}_\text{CE} = -\sum_{c=1}^M y_c \log p_c = -\log p_{\text{true}}$$
+
+The one-hot simplification means cross-entropy collapses to the negative log-probability of the correct class. Probabilistic basis: negative log-likelihood under the categorical distribution. Default choice for multi-class classification.
+
+**Binary cross-entropy.** For binary targets $y \in \{0,1\}$ with sigmoid output $p$:
+
+$$\mathcal{L}_\text{BCE} = -(y \log p + (1-y) \log(1-p))$$
+
+Probabilistic basis: negative log-likelihood under the Bernoulli distribution. Used for binary classification and multi-label classification (independent sigmoid per class).
+
+**Cross-entropy and KL divergence.** These are related by:
+
+$$H(P, Q) = D_\text{KL}(P \| Q) + H(P)$$
+
+When the true distribution $P$ is fixed (one-hot labels), $H(P)$ is constant, so minimising cross-entropy is equivalent to minimising KL divergence. In knowledge distillation where $P$ is a soft teacher distribution, you must use KL divergence directly since $H(P)$ changes.
+
+**KL divergence:**
+
+$$D_\text{KL}(P \| Q) = \sum_x P(x) \log \frac{P(x)}{Q(x)}$$
+
+Not symmetric: $D_\text{KL}(P\|Q) \neq D_\text{KL}(Q\|P)$. Forward KL ($P\|Q$, "mean-seeking") vs. reverse KL ($Q\|P$, "mode-seeking") have different behaviours — important in variational inference and distillation.
+
+**Focal loss** ([Lin et al. 2017](https://arxiv.org/abs/1708.02002)):
+
+$$\mathcal{L}_\text{focal} = -(1 - p_t)^\gamma \log p_t$$
+
+where $p_t$ is the predicted probability for the true class and $\gamma \geq 0$ is the focusing parameter. At $\gamma=0$, reduces to standard cross-entropy. As $\gamma$ increases, the $(1-p_t)^\gamma$ factor downweights easy (well-classified) examples and focuses gradient on hard misclassified ones. Invented for object detection with extreme foreground/background imbalance (1:1000+). Use when class imbalance is severe.
+
+**Hinge loss (SVM loss).** For binary labels $t \in \{-1,+1\}$ and classifier score $y$:
+
+$$\mathcal{L}_\text{hinge} = \max(0,\; 1 - t \cdot y)$$
+
+Zero loss when $t \cdot y \geq 1$ (correct prediction with sufficient margin). Non-differentiable at the hinge — use subgradient methods. Convex for linear classifiers. Less common in deep networks (cross-entropy preferred).
+
+**Label smoothing.** Replaces hard one-hot targets with soft targets:
+
+$$\tilde{y}_c = (1 - \epsilon)\, y_c + \frac{\epsilon}{M}$$
+
+where $\epsilon$ is the smoothing factor (typically 0.1) and $M$ is the number of classes. Prevents the model from becoming overconfident (logits growing to ±∞). Used in nearly all modern LLM training runs.
+
+#### Regression Losses
+
+**Mean Squared Error (MSE / L2):**
+
+$$\mathcal{L}_\text{MSE} = \frac{1}{m} \sum_{i=1}^m (y^{(i)} - \hat{y}^{(i)})^2$$
+
+Probabilistic basis: maximum likelihood under Gaussian noise. Gradient grows linearly with error, making it sensitive to outliers. Use when Gaussian noise is a reasonable assumption and large errors should be penalised strongly.
+
+**Why MSE is wrong for classification:** assumes Gaussian output noise (incorrect for discrete labels), creates non-convex objectives with sigmoid/softmax, and produces vanishing gradients for confident predictions. Always use cross-entropy for classification.
+
+**Mean Absolute Error (MAE / L1):**
+
+$$\mathcal{L}_\text{MAE} = \frac{1}{m} \sum_{i=1}^m |y^{(i)} - \hat{y}^{(i)}|$$
+
+Probabilistic basis: maximum likelihood under Laplace noise. Constant gradient magnitude ($\pm 1$) makes it robust to outliers but can cause slower convergence near the optimum (gradient doesn't decrease as error decreases).
+
+**Huber loss (Smooth L1):** hybrid that is quadratic for small errors and linear for large ones:
+
+$$\mathcal{L}_\delta(a) = \begin{cases} \frac{1}{2} a^2 & |a| \leq \delta \\ \delta\left(|a| - \frac{1}{2}\delta\right) & |a| > \delta \end{cases}$$
+
+Continuously differentiable at the transition point. Best of both worlds: MSE's smooth convergence near optimum + MAE's outlier robustness. $\delta$ is a hyperparameter — tune to the scale of expected residuals.
+
+#### Metric Learning Losses
+
+**Triplet loss.** Given anchor $a$, positive $p$ (same class), and negative $n$ (different class):
+
+$$\mathcal{L}_\text{triplet} = \max\!\left(0,\; d(a, p) - d(a, n) + \text{margin}\right)$$
+
+Enforces positives closer than negatives by at least `margin` (typically 1.0). Used in face recognition, person re-ID. Requires careful triplet mining — random negatives lead to trivial (zero-loss) training examples.
+
+**InfoNCE / NT-Xent (contrastive).** For anchor $x_i$ and positive $x_i^+$ in a batch of $N$ pairs:
+
+$$\mathcal{L}_\text{InfoNCE} = -\log \frac{\exp(\text{sim}(z_i, z_j)/\tau)}{\sum_{k=1}^{2N} \exp(\text{sim}(z_i, z_k)/\tau)}$$
+
+$\tau$ is temperature (typical: 0.07). Larger batches provide more negatives — performance scales with batch size. Used in SimCLR, CLIP, and contrastive pretraining.
+
+#### Loss Selection Guide
+
+| Task | Loss | Activation | Notes |
+|---|---|---|---|
+| Multi-class classification | Cross-entropy | Softmax | Default |
+| Binary classification | Binary cross-entropy | Sigmoid | |
+| Multi-label classification | Binary cross-entropy | Sigmoid (per class) | Independent per class |
+| Regression (Gaussian noise) | MSE | Linear | |
+| Regression (outliers) | Huber or MAE | Linear | Tune $\delta$ |
+| Class imbalance | Focal loss | Sigmoid/Softmax | $\gamma \in [0.5, 5]$ |
+| Knowledge distillation | KL divergence | Softmax | Soft targets from teacher |
+| Metric learning | Triplet or InfoNCE | L2-normalised embedding | |
+| LLM pretraining | Cross-entropy | Softmax over vocab | One per position |
+
+---
+
+### Dropout & Regularisation
+{: #dropout-reg}
+
+Regularisation techniques constrain the model during training to improve generalisation. The core problem they address: a sufficiently large model can memorise the training set — regularisation makes memorisation harder and generalisation easier.
+
+#### Weight Decay (L2 Regularisation)
+
+Adds a penalty proportional to the squared magnitude of all weights to the loss:
+
+$$\mathcal{L}_\text{reg} = \mathcal{L}_\text{task} + \frac{\lambda}{2} \sum_j w_j^2$$
+
+Gradient update becomes: $w \leftarrow w(1 - \lambda\eta) - \eta \nabla_w \mathcal{L}_\text{task}$
+
+The $(1 - \lambda\eta)$ factor shrinks weights toward zero each step — hence "weight decay." Equivalent to placing a Gaussian prior on weights ($w \sim \mathcal{N}(0, 1/\lambda)$) and computing the MAP estimate.
+
+**L2 regularisation ≠ weight decay with Adam.** With SGD they are equivalent. With Adam, L2 adds to the gradient *before* adaptive scaling — large-gradient parameters get proportionally less regularisation. Weight decay applies the penalty *after* adaptive scaling, uniformly across all parameters. AdamW implements true weight decay; Adam + L2 does not.
+
+#### Dropout
+
+Dropout ([Srivastava et al. 2014](https://jmlr.org/papers/v15/srivastava14a.html)) randomly zeros out activations during training with probability $p$ (the *drop rate*):
+
+**Standard dropout:**
+- Training: each activation independently zeroed with probability $p$; surviving activations unchanged
+- Inference: multiply all weights by $(1-p)$ to match expected activation magnitude
+
+**Inverted dropout** (standard in practice):
+- Training: zero with probability $p$; scale surviving activations by $1/(1-p)$
+- Inference: no modification — weights are already in the right scale
+
+Inverted dropout is preferred because inference is unchanged regardless of the training drop rate.
+
+**Why dropout works:**
+1. **Breaks co-adaptation:** neurons cannot rely on specific other neurons always being present — each must learn useful features independently
+2. **Implicit ensemble:** with drop rate $p$ and $n$ neurons, there are $2^n$ possible sub-networks. Dropout approximates averaging over this ensemble
+3. **Sparse representations:** encourages neurons to activate selectively rather than diffusely
+4. **Training noise:** random masking acts as data augmentation at the representation level
+
+**Architecture sizing rule:** if you plan to use dropout rate $p$ on a layer with $n$ units, size the layer to at least $n/(1-p)$ units. The effective capacity should match the task, not the pre-dropout size.
+
+| Layer type | Typical drop rate |
+|---|---|
+| Input / visible layer | $p = 0.1$–$0.2$ |
+| Hidden layers (MLP) | $p = 0.3$–$0.5$ |
+| Attention dropout (transformers) | $p = 0.0$–$0.1$ |
+| Residual dropout (transformers) | $p = 0.0$–$0.1$ |
+
+Transformers at scale use very low or zero dropout — the massive dataset provides sufficient regularisation. Dropout rates of 0.1–0.3 are used in smaller-scale training runs.
+
+**Max-norm regularisation.** Complement to dropout: clip the L2 norm of each neuron's incoming weight vector to a maximum $c$ (typical: $c = 3$–$4$). Prevents weights from exploding when activations are randomly dropped.
+
+$$\|w_i\|_2 \leq c$$
+
+#### Dropout Variants
+
+**MC Dropout** (Gal & Ghahramani 2016): keep dropout active at inference time; run $K$ forward passes; treat the variance across outputs as an uncertainty estimate. Turns any dropout-trained network into a Bayesian approximation — cheap uncertainty quantification without separate ensemble models.
+
+**DropConnect** (Wan et al. 2013): instead of dropping activations, randomly drop individual *weights* (connections). Finer-grained than dropout; not widely used in practice due to implementation complexity.
+
+**Spatial Dropout** (for CNNs): instead of dropping individual activations, drop entire feature maps (channels). Preserves spatial coherence — if two adjacent pixels always co-occur in a feature map, standard dropout won't break their co-adaptation because they're rarely simultaneously dropped.
+
+**Stochastic Depth / DropPath** ([Huang et al. 2016](https://arxiv.org/abs/1603.09382)): randomly skip entire residual blocks during training. Each layer survives with probability $p_l$, linearly decreasing from 1 at the first layer to $p_L$ at the last. At inference, scale each block's output by its survival probability.
+
+$$h_l = \begin{cases} \text{identity}(x_l) & \text{with prob } 1 - p_l \\ x_l + F_l(x_l) & \text{with prob } p_l \end{cases}$$
+
+Widely used in modern ViTs and ConvNeXt. Provides a strong regularisation effect and also speeds up training (skipped blocks cost no compute).
+
+**Variational Dropout** ([Kingma et al. 2015](https://arxiv.org/abs/1506.02557)): learns the optimal drop rate per weight from data. Interprets dropout as a Gaussian multiplicative noise approximation; the per-weight drop rate becomes a learnable parameter. Can drive many weights to near-zero (effective pruning).
+
+#### Regularisation Comparison
+
+| Technique | Where applied | Main mechanism | When to prefer |
+|---|---|---|---|
+| **L2 / weight decay** | Parameters | Shrinks large weights | Almost always; use with AdamW |
+| **Dropout** | Activations | Random unit removal | Small-to-medium datasets, MLPs |
+| **Stochastic depth** | Residual blocks | Random layer skip | ViTs, deep ResNets |
+| **Spatial dropout** | CNN feature maps | Channel-level drop | CNNs with spatially correlated features |
+| **MC Dropout** | Activations (at inference) | Uncertainty estimation | When you need cheap uncertainty estimates |
+| **Label smoothing** | Loss targets | Soft targets | Nearly all classification; prevents overconfidence |
+| **Max-norm** | Weight norms | Clips weight magnitude | With high dropout rates |
+
+> **Interview question:** A transformer model trained on a small dataset (50K examples) is overfitting badly. You try dropout 0.5 on attention and residual layers and training loss diverges. What went wrong and how do you fix it?
+>
+> *Dropout 0.5 is far too aggressive for transformer layers, where pre-norm residual connections depend on stable activation scaling. With 50% dropout on residual layers, approximately 75% of the residual stream is zeroed at any step (dropout on both branches independently). Training diverges because the effective learning signal becomes extremely noisy. Fix: (1) Lower dropout to 0.1 on residual and 0.0–0.05 on attention. (2) Add stochastic depth (DropPath) with survival rate ~0.9 — it's a more stable regulariser for transformers. (3) Add weight decay (1e-2 to 1e-1) via AdamW. (4) Use label smoothing $\epsilon = 0.1$. (5) If the dataset is genuinely tiny, consider data augmentation or synthetic data before throwing regularisation at the problem — regularisation reduces overfitting but doesn't add information.*
+
+---
+
 ## Optimiser & Training Stability
 {: #optimiser}
 
 ### AdamW
 {: #adam}
 
-LLM pretraining universally uses **AdamW** — Adam with decoupled weight decay. For each parameter `θ`:
+LLM pretraining universally uses **[AdamW](https://arxiv.org/abs/1412.6980)** — Adam with decoupled weight decay. For each parameter `θ`:
 
 ```
 m = β₁·m + (1−β₁)·g          # first moment: exponentially weighted gradient mean
@@ -421,7 +681,7 @@ Batch size is one of the most consequential hyperparameters in pretraining, and 
 ## Scaling Laws
 {: #scaling-laws}
 
-Scaling laws (Kaplan et al. 2020; Hoffmann et al. 2022 — "Chinchilla") describe how model performance varies with compute budget, model size, and training tokens. The key empirical finding from Chinchilla:
+[Scaling laws](https://arxiv.org/abs/2001.08361) (Kaplan et al. 2020; Hoffmann et al. 2022 — "[Chinchilla](https://arxiv.org/abs/2203.15556)") describe how model performance varies with compute budget, model size, and training tokens. The key empirical finding from Chinchilla:
 
 > **For a fixed compute budget `C` (in FLOPs), the optimal model size `N` and training tokens `D` satisfy `N ∝ D` — model size and token count should scale equally.**
 
@@ -704,7 +964,7 @@ Data curation quality is often as important as architecture changes for frontier
 
 **Common Crawl: gold and garbage.** CC is massive and diverse but requires engineering at every stage. HTML extraction (boilerplate removal, link density heuristics) must precede language ID. Language ID fails on short documents, code-heavy pages, and transliterated text. Quality filtering needs both heuristic rules (length thresholds, punctuation ratios, stopword density) and a neural classifier to catch subtly low-quality text.
 
-**C4 vs FineWeb — the evolution of web curation:**
+**C4 vs [FineWeb](https://arxiv.org/abs/2406.17557) — the evolution of web curation:**
 
 | Axis | C4 (T5-era) | FineWeb / FineWeb-Edu |
 |---|---|---|
@@ -751,7 +1011,7 @@ Modern pre-training pipelines no longer restrict themselves to organic web text.
 
 Effect: models acquire format-following earlier in training, improving later instruction tuning efficiency. Risk: reduces diversity if instruction text dominates; creates contamination risk if instruction prompts overlap with eval benchmarks.
 
-**Synthetic pre-training data** (Phi lineage, reasoning models). A strong generator model creates denser-than-web content:
+**Synthetic pre-training data** ([Phi](https://arxiv.org/abs/2306.11644) lineage, reasoning models). A strong generator model creates denser-than-web content:
 - "Textbook" explanations with exercises (more supervision per token, fewer ads/boilerplate).
 - Reasoning problems with verifiable answers (chain-of-thought traces).
 - Code tasks with unit tests.
@@ -991,3 +1251,187 @@ Wider layers get a proportionally smaller learning rate so activation changes st
 | Muon | η ∝ √(d_out/d_in) | Built into the RMS-to-RMS update scaling |
 
 > **Think about it**: muP makes the learning rate depend on layer shape, not just a global scalar. How does this interact with parameter sharing (e.g. an embedding matrix used both at the input and output of a transformer)? What would the correct scaling be?
+
+---
+
+## Token Sampling & Decoding
+{: #token-sampling}
+
+Once a model is trained, every generated token is the result of a decoding decision. Decoding strategy is a separate hyperparameter from training — the same model weights produce wildly different outputs depending on how you sample from the output distribution.
+
+**Autoregressive factorisation.** LLMs generate text sequentially, each token conditioned on all previous ones:
+
+$$p(x_{1:T}) = \prod_{t=1}^T p(x_t \mid x_{<t})$$
+
+At each step $t$, the model outputs a logit vector $z \in \mathbb{R}^{|\mathcal{V}|}$ which is converted to a probability distribution via softmax:
+
+$$q_i = \frac{e^{z_i}}{\sum_{j=1}^{|\mathcal{V}|} e^{z_j}}$$
+
+The decoding method determines which token to select from this distribution.
+
+### Greedy & Beam Search
+{: #greedy-beam}
+
+**Greedy decoding.** Select the highest-probability token at every step:
+
+$$x_t = \arg\max_{i \in \mathcal{V}}\; p(x_t = i \mid x_{<t})$$
+
+Complexity: $O(T \cdot |\mathcal{V}|)$. Fully deterministic and fast.
+
+Failure modes: myopic — a locally optimal token can foreclose globally better continuations. Produces repetitive, degenerate output on open-ended tasks. Once a mistake is made, it propagates irreversibly.
+
+**Exhaustive search.** The theoretically optimal approach — find the sequence maximising joint log-probability:
+
+$$x_{1:T}^* = \arg\max_{x_{1:T} \in \mathcal{V}^T} \sum_{t=1}^{T} \log p(x_t \mid x_{<t})$$
+
+Complexity: $O(|\mathcal{V}|^T)$ — exponentially intractable. Motivates beam search as a practical approximation.
+
+**Beam search.** Maintains $k$ candidate hypotheses (beams) in parallel, always retaining the $k$ with highest cumulative log-probability:
+
+$$\text{score}(h) = \sum_{i=1}^{t} \log p(x_i \mid x_{<i})$$
+
+Steps per token: expand each of the $k$ beams by $|\mathcal{V}|$ candidates → score all $k \cdot |\mathcal{V}|$ → prune back to top $k$.
+
+Complexity: $O(T \cdot k \cdot |\mathcal{V}|)$.
+
+**Length normalisation** prevents bias toward short sequences (which accumulate fewer log-probability penalties):
+
+$$\text{score}_\text{norm}(h) = \frac{1}{t^\alpha} \sum_{i=1}^{t} \log p(x_i \mid x_{<i}), \quad \alpha \in [0, 1]$$
+
+$\alpha = 0$ is unnormalised beam search; $\alpha = 1$ is full length normalisation. Tune $\alpha$ on a dev set.
+
+**Constrained beam search.** Extends beam search with explicit constraint satisfaction — forces inclusion of required tokens or phrases. Uses a *banking mechanism*: groups hypotheses by constraint satisfaction level and selects round-robin to ensure balanced progress across constraint levels.
+
+$$\text{score}(h) = \sum_{i=1}^{t} \log p(x_i \mid x_{<i}) + \lambda \cdot f_\text{constraint}(h)$$
+
+| Method | Deterministic | Diversity | Best for |
+|---|---|---|---|
+| **Greedy** | Yes | Very low | Short factual outputs, speed |
+| **Beam search** | Yes | Low | Translation, summarisation, structured output |
+| **Constrained beam** | Yes | Low | Outputs with mandatory phrases/tokens |
+
+### Temperature Scaling
+{: #temperature}
+
+Temperature rescales logits before softmax — it doesn't change model parameters, only the sharpness of the output distribution:
+
+$$q_i = \frac{\exp(z_i / T)}{\sum_{j=1}^{|\mathcal{V}|} \exp(z_j / T)}$$
+
+| Temperature range | Distribution shape | Typical use |
+|---|---|---|
+| $T \to 0^+$ | Delta function on argmax (= greedy) | Deterministic factual tasks |
+| $T \in [0.1, 0.5]$ | Sharp, peaked | Code generation, factual Q&A |
+| $T \in [0.6, 1.0]$ | Balanced | Dialogue, chat, instruction following |
+| $T > 1.0$ | Flat, high entropy | Creative writing, brainstorming |
+
+As $T \to 0^+$, the distribution collapses to greedy. As $T \to \infty$, all tokens become equally likely.
+
+Temperature is a global rescaling — it amplifies or dampens all probability differences proportionally. It doesn't filter which tokens are eligible to be sampled.
+
+### Top-k & Top-p (Nucleus) Sampling
+{: #topk-topp}
+
+**Top-k sampling.** Restrict sampling to the $k$ highest-probability tokens; renormalise over the restricted set:
+
+$$\mathcal{V}_k = \text{TopK}\!\left(p(x_t \mid x_{<t}),\; k\right)$$
+
+$$\tilde{p}(x_t = i) = \begin{cases} \dfrac{p(x_t=i)}{\sum_{j \in \mathcal{V}_k} p(x_t=j)} & i \in \mathcal{V}_k \\ 0 & \text{otherwise} \end{cases}$$
+
+Edge cases: $k = 1$ → greedy; $k = |\mathcal{V}|$ → unrestricted sampling.
+
+**Problem with fixed $k$.** When the model's distribution is peaked (high-confidence prediction), a fixed $k$ of e.g. 50 still allows 49 low-probability tokens to compete with the dominant one. When the distribution is flat (model is uncertain), $k = 50$ may cut off many equally plausible continuations.
+
+**Top-p (nucleus) sampling** ([Holtzman et al. 2020](https://arxiv.org/abs/1904.09731)) fixes this by adapting the candidate set size to the distribution shape. Select the *smallest* set of tokens whose cumulative probability exceeds threshold $p$:
+
+$$\mathcal{V}_p = \left\{i \;\Big|\; \sum_{j=1}^{i} p_j \geq p\right\} \quad \text{(tokens sorted by descending probability)}$$
+
+$$\tilde{p}(x_t = i) = \begin{cases} \dfrac{p(x_t=i)}{\sum_{j \in \mathcal{V}_p} p(x_t=j)} & i \in \mathcal{V}_p \\ 0 & \text{otherwise} \end{cases}$$
+
+Typical values: $p \in [0.7, 0.9]$ (commonly $p \approx 0.9$ for open-ended, $p \approx 0.75$ for balanced).
+
+Behaviour:
+- $p \to 0$ → approaches greedy (only top token)
+- $p \to 1$ → approaches unrestricted sampling
+
+When the model is confident, $\mathcal{V}_p$ is small (a few tokens cover $p$ of the mass). When the model is uncertain, $\mathcal{V}_p$ expands to include many plausible tokens. This adaptivity is the key advantage over top-k.
+
+**Top-k vs. top-p in practice:**
+
+| Property | Top-k | Top-p |
+|---|---|---|
+| Candidate set size | Fixed ($k$) | Adaptive (depends on distribution) |
+| Handles peaked distributions | Poorly (includes too many low-prob tokens) | Well (small set) |
+| Handles flat distributions | Poorly (cuts off valid tokens) | Well (large set) |
+| Hyperparameter sensitivity | High | Lower |
+| Standard in production | Widely used | Dominant for open-ended generation |
+
+Many APIs offer both; apply top-k first then top-p (top-k limits the pool, top-p further trims it).
+
+**Temperature vs. nucleus:** temperature reshapes the distribution *before* computing the nucleus; nucleus filters *after*. Most APIs treat them as composable: apply temperature first, then nucleus filter.
+
+### min-p Sampling
+{: #minp}
+
+min-p filters tokens relative to the *maximum* token probability rather than an absolute threshold:
+
+$$\tau = \text{min-p} \cdot p_\text{max}$$
+
+$$\mathcal{V}_\text{min-p} = \left\{i \mid p(x_t = i \mid x_{<t}) \geq \tau \right\}$$
+
+Algorithm:
+1. Compute $p_\text{max}$ (the highest-probability token's probability)
+2. Set threshold $\tau = \text{min-p} \times p_\text{max}$
+3. Drop all tokens below $\tau$
+4. Renormalise; sample from the remainder
+
+**Adaptive behaviour:**
+- When the model is confident ($p_\text{max}$ is high), $\tau$ is high → aggressive filtering → near-greedy
+- When the model is uncertain ($p_\text{max}$ is low), $\tau$ is low → many tokens survive → high diversity
+
+This is the opposite of the top-k failure mode: the threshold scales with model confidence, not with an externally fixed count.
+
+Recommended: $\text{min-p} \in [0.05, 0.1]$ combined with $T > 1.0$. min-p is particularly effective at high temperatures — it lets temperature drive creativity while preventing the model from sampling incoherent tail tokens.
+
+### Tradeoffs & Practical Guide
+{: #sampling-tradeoffs}
+
+| Method | Deterministic | Diversity | Coherence | Hyperparameters |
+|---|---|---|---|---|
+| **Greedy** | Yes | Very low | High | None |
+| **Beam search** | Yes | Low | High | $k$, $\alpha$ |
+| **Temperature** | No | Tunable | Degrades at $T > 1$ | $T$ |
+| **Top-k** | No | Medium | Medium | $k$ |
+| **Top-p (nucleus)** | No | High, adaptive | Good | $p$ |
+| **min-p** | No | Adaptive | Good at high $T$ | min-p, $T$ |
+
+**Decision guide:**
+
+```
+Structured output (translation, summarisation, code)?
+    → Beam search (k=4–8, length normalisation α=0.6)
+
+Factual Q&A, short answers?
+    → Greedy or low-temperature (T=0.1–0.3) top-p (p=0.9)
+
+Dialogue / instruction following?
+    → Temperature T=0.7, top-p p=0.9
+
+Creative writing / brainstorming?
+    → Temperature T=1.0–1.3, min-p=0.05–0.1
+      (min-p prevents incoherence at high T)
+
+Diverse candidates for reranking?
+    → High temperature + top-p, sample K=10–20, pick best
+```
+
+**Repetition penalty.** A common add-on: reduce the logit of any token that has already appeared in the context by a multiplicative factor $< 1$. Addresses greedy/beam search's tendency to repeat phrases. Can be too aggressive — penalising reasonable repeated words (e.g. "the").
+
+**Common anti-patterns:**
+- Using $T > 1$ without min-p or top-p: the model can sample extremely low-probability (incoherent) tokens
+- Using fixed $k$ with no temperature: brittle across distribution shapes
+- Setting $p$ close to 1.0 and $T$ close to 0: effectively greedy — nucleus adds no value
+- Beam search for open-ended creative generation: produces generic, safe, repetitive outputs
+
+> **Interview question:** A chatbot is producing repetitive, generic responses. The engineer increases top-k from 10 to 100. Responses become more diverse but sometimes incoherent. What's a better approach, and why?
+>
+> *The problem is that a fixed top-k of 10 was too restrictive when the model's distribution was flat (uncertain turns), and increasing it to 100 let in low-probability garbage tokens when the model was confident. The right fix is to switch to top-p (nucleus) sampling with $p \approx 0.9$: when the model is confident, the nucleus is small and quality is preserved; when uncertain, the nucleus expands naturally. If coherence is still a concern at higher diversity, combine top-p with a modest temperature ($T \approx 0.8$) and min-p ($\approx 0.05$) as a floor filter. The repetition issue is separate — add a repetition penalty (logit downweight of $0.9$–$0.95$ for already-seen tokens) rather than reaching for a blunt top-k change.*

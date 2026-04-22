@@ -160,7 +160,7 @@ The **CLEAR Framework** governs effective prompt construction: Conciseness, Logi
 
 **Zero-shot and few-shot paradigms.** Zero-shot prompting relies entirely on instruction clarity and pre-trained knowledge. Few-shot extends this with carefully selected exemplars. In-context learning treats demonstration examples as a form of meta-learning — the model infers a task specification from examples without parameter updates.
 
-**Chain-of-Thought (CoT).** CoT decomposes complex problems into intermediate reasoning steps, mirroring human cognition. Zero-shot CoT with "Let's think step by step" improved MultiArith accuracy from 17.7% to 78.7%. Automatic Prompt Engineer (APE) automates prompt search via LLM-generated candidates evaluated against a held-out set.
+**[Chain-of-Thought](https://arxiv.org/abs/2201.11903) (CoT).** CoT decomposes complex problems into intermediate reasoning steps, mirroring human cognition. Zero-shot CoT with "Let's think step by step" improved MultiArith accuracy from 17.7% to 78.7%. Automatic Prompt Engineer (APE) automates prompt search via LLM-generated candidates evaluated against a held-out set.
 
 **Structured reasoning topologies.**
 
@@ -173,7 +173,7 @@ The **CLEAR Framework** governs effective prompt construction: Conciseness, Logi
   </ol>
 </div>
 
-Long Chain-of-Thought (LongCoT) — as in OpenAI o1, DeepSeek-R1, QwQ — uses substantially longer reasoning traces with self-reflection and error correction. Empirically, larger context windows correlate with stronger reasoning performance. Adaptive approaches like Auto Long-Short Reasoning dynamically adjust trace length to question complexity.
+Long Chain-of-Thought (LongCoT) — as in OpenAI o1, [DeepSeek-R1](https://arxiv.org/abs/2501.12948), QwQ — uses substantially longer reasoning traces with self-reflection and error correction. Empirically, larger context windows correlate with stronger reasoning performance. Adaptive approaches like Auto Long-Short Reasoning dynamically adjust trace length to question complexity.
 
 ### External Knowledge Retrieval
 {: #external-retrieval}
@@ -393,7 +393,7 @@ Tool use transforms LLMs from passive generators into active world-interactors. 
 
 Multi-agent systems coordinate specialised agents toward shared goals, distributing context across a network rather than concentrating it in one model.
 
-**Communication protocols.** Agent-to-agent communication requires shared message schemas. FIPA ACL and KQML are classical agent communication languages. Modern frameworks like A2A (Agent-to-Agent Protocol) and ANP (Agent Network Protocol) provide standardised APIs for agent discovery, capability advertisement, and message passing. MCP standardises tool/resource exposure between agents and orchestrators.
+**Communication protocols.** Agent-to-agent communication requires shared message schemas. FIPA ACL and KQML are classical agent communication languages. Modern frameworks like A2A (Agent-to-Agent Protocol) and ANP (Agent Network Protocol) provide standardised APIs for agent discovery, capability advertisement, and message passing. [MCP](https://modelcontextprotocol.io/specification/2025-03-26) standardises tool/resource exposure between agents and orchestrators.
 
 **Orchestration patterns.**
 
@@ -722,7 +722,7 @@ Shipped products compose these nine patterns into two recognisable families. Ide
 ### Fast Answer Engines
 {: #fast-answer-engines}
 
-**Products.** ChatGPT Search, Perplexity Standard/Pro, Perplexica/Vane.
+**Products.** ChatGPT Search, Perplexity Standard/Pro, [Perplexica](https://github.com/ItzCrazyKns/Perplexica)/Vane.
 
 **End artifact.** Short cited answer + conversational follow-up state.
 
@@ -758,7 +758,7 @@ The chat shell is stable; the intermediate context object (short bundle vs. note
 ### Deep Research Engines
 {: #deep-research-engines}
 
-**Products.** ChatGPT Deep Research, Perplexity Research, STORM, Open Deep Research.
+**Products.** ChatGPT Deep Research, Perplexity Research, [STORM](https://arxiv.org/abs/2402.14207), [Open Deep Research](https://github.com/langchain-ai/open_deep_research).
 
 **End artifact.** A structured report with citations, table of contents, and activity trace — not a chat blurb.
 

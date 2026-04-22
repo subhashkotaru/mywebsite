@@ -225,7 +225,7 @@ h = h + W_up(ReLU(W_down(h)))
 ### LoRA
 {: #lora}
 
-**LoRA (Low-Rank Adaptation)** avoids new layers entirely by reparameterising the weight update. The key observation: weight updates in fine-tuning have low intrinsic rank — the gradient updates during adaptation live in a low-dimensional subspace of the full weight matrix space. LoRA makes this explicit.
+**[LoRA](https://arxiv.org/abs/2106.09685) (Low-Rank Adaptation)** avoids new layers entirely by reparameterising the weight update. The key observation: weight updates in fine-tuning have low intrinsic rank — the gradient updates during adaptation live in a low-dimensional subspace of the full weight matrix space. LoRA makes this explicit.
 
 For a frozen weight `W₀ ∈ ℝ^(d×k)`, the learned update is factored as:
 
@@ -273,7 +273,7 @@ The scaling factor `α/r` is applied (where `α` is a hyperparameter, typically 
 ### QLoRA
 {: #qlora}
 
-**QLoRA** quantises the frozen base model weights to 4 bits, reducing base model memory by ~4× while keeping the LoRA adapters in BF16 for stable gradient flow.
+**[QLoRA](https://arxiv.org/abs/2305.14314)** quantises the frozen base model weights to 4 bits, reducing base model memory by ~4× while keeping the LoRA adapters in BF16 for stable gradient flow.
 
 **Why naive 4-bit quantisation fails.** LLM weight matrices contain extreme outliers — individual weights that are 10–100× larger than most others. A uniform 4-bit quantisation scheme assigns 16 bins across the entire weight range. With outliers, most bins cluster around the centre and the actual weight distribution is poorly represented, causing large quantisation error. QLoRA solves this with two innovations:
 
@@ -428,7 +428,7 @@ where `y_w` is the preferred response, `y_l` the rejected, and `r(x, y)` is the 
 ### PPO
 {: #ppo}
 
-With a trained reward model, the SFT model is further updated using **Proximal Policy Optimisation (PPO)** — an RL algorithm designed for stable policy gradient updates.
+With a trained reward model, the SFT model is further updated using **[Proximal Policy Optimisation (PPO)](https://arxiv.org/abs/1707.06347)** — an RL algorithm designed for stable policy gradient updates.
 
 The SFT model is the **policy** `π_θ`: it takes a prompt as state and generates a response token-by-token. The reward model scores the completed response. PPO maximises:
 
@@ -472,9 +472,9 @@ For a 7B model this is 4 × ~14GB = ~56 GB minimum, before activations or optimi
 ### DPO
 {: #dpo}
 
-**Direct Preference Optimisation (DPO)** bypasses the reward model and PPO entirely. It derives a closed-form loss that directly optimises the policy on preference pairs.
+**[Direct Preference Optimisation (DPO)](https://arxiv.org/abs/2305.18290)** bypasses the reward model and PPO entirely. It derives a closed-form loss that directly optimises the policy on preference pairs.
 
-**The key insight**: in RLHF with KL regularisation, there is a unique optimal policy:
+**The key insight**: in [RLHF](https://arxiv.org/abs/2203.02155) with KL regularisation, there is a unique optimal policy:
 
 ```
 π*(y|x) = (1/Z(x)) · π_ref(y|x) · exp(r(x,y)/β)
@@ -545,7 +545,7 @@ The key advantage: no separate SFT phase needed, no reference model in memory. O
 ### GRPO
 {: #grpo}
 
-**Group Relative Policy Optimisation (GRPO)**, used in DeepSeek-R1, eliminates the value network from PPO while keeping the online RL loop. For each prompt, it samples `G` completions from the current policy and uses their relative rewards as baselines:
+**[Group Relative Policy Optimisation (GRPO)](https://arxiv.org/abs/2402.03300)**, used in [DeepSeek-R1](https://arxiv.org/abs/2501.12948), eliminates the value network from PPO while keeping the online RL loop. For each prompt, it samples `G` completions from the current policy and uses their relative rewards as baselines:
 
 ```
 A_i = (r_i - mean(r_1,...,r_G)) / std(r_1,...,r_G)
@@ -1132,13 +1132,13 @@ The state `sₜ` is the token sequence so far: conversation history, tool output
 
 **Why sparse binary rewards are not enough.** Sparse rewards (correct/incorrect) produce zero-gradient batches on hard problems where the model always fails. Every recent system adds reward shaping — but each technique introduces its own failure modes.
 
-**DAPO (ByteDance/SIA, 2025) — four mechanisms on top of GRPO:**
+**[DAPO](https://arxiv.org/abs/2503.14476) (ByteDance/SIA, 2025) — four mechanisms on top of GRPO:**
 1. *Dynamic sampling*: discard prompt groups where all G samples are correct or all incorrect (zero advantage ⇒ zero gradient); resample until the batch has reward variance
 2. *Overlong reward shaping*: truncated sequences get a soft length penalty instead of a hard −1 (prevents the model from learning "truncate early to avoid negative reward")
 3. *Token-level loss*: normalise per token, not per sequence, so long chains of thought are weighted fairly against short ones
 4. *Clip-Higher*: asymmetric clipping (ε_low < ε_high) allows increasing good-action probability more freely, preventing entropy collapse while still bounding harmful updates
 
-**GSPO (Qwen 3 Instruct/Coder/Thinking) — sequence-level ratios for MoE.** Standard GRPO uses per-token importance ratios `πθ(aₜ|sₜ)/πθ_old(aₜ|sₜ)`, which accumulate variance over long sequences and misalign with sequence-level rewards. GSPO uses sequence-level ratios — the geometric mean over token positions:
+**[GSPO](https://arxiv.org/abs/2507.18071) (Qwen 3 Instruct/Coder/Thinking) — sequence-level ratios for MoE.** Standard GRPO uses per-token importance ratios `πθ(aₜ|sₜ)/πθ_old(aₜ|sₜ)`, which accumulate variance over long sequences and misalign with sequence-level rewards. GSPO uses sequence-level ratios — the geometric mean over token positions:
 
 ```
 sᵢ(θ) = [πθ(yᵢ|x) / πθ_old(yᵢ|x)]^{1/|yᵢ|}
@@ -1146,7 +1146,7 @@ sᵢ(θ) = [πθ(yᵢ|x) / πθ_old(yᵢ|x)]^{1/|yᵢ|}
 
 Benefits for MoE: per-token router shifts cancel in the geometric mean; more tolerant of precision mismatches across devices; eliminates train-inference mismatch where different parallelism strategies produce different expert routing.
 
-**CISPO (MiniMax M2.5) — per-step process rewards for long agentic trajectories.** When trajectories reach 200k tokens with 30+ tool calls, outcome-only reward provides no credit assignment signal for early steps. CISPO assigns each intermediate step its own advantage based on per-step rewards, enabling learning from step-level successes and failures within a trajectory.
+**[CISPO](https://arxiv.org/abs/2506.09355) (MiniMax M2.5) — per-step process rewards for long agentic trajectories.** When trajectories reach 200k tokens with 30+ tool calls, outcome-only reward provides no credit assignment signal for early steps. CISPO assigns each intermediate step its own advantage based on per-step rewards, enabling learning from step-level successes and failures within a trajectory.
 
 **Router replay (R3) — fixing MoE training-inference mismatch.** In MoE RL, rollouts run on an inference engine and gradient updates on a separate training engine. Even for the same input, different parallelism configurations can route tokens to different experts — inflating importance ratios and causing training collapse. R3: record the routing mask (which expert handles each token) during inference rollouts, then replay those same masks during the training forward pass. Reduces KL divergence between training and inference phases by ~10×. Trade-off vs GSPO: R3 fixes the mismatch directly but adds engineering complexity (routing mask storage, engine coupling); GSPO avoids the problem by operating at sequence level where per-token routing noise washes out.
 
@@ -1246,7 +1246,7 @@ Reward R(τ)                  — verifier score, test pass rate, environment ou
 
 The training data distribution is **not fixed** — it co-evolves with the current policy, prompt sampler, and reward computation.
 
-**REINFORCE — the baseline policy gradient:**
+**[REINFORCE](https://link.springer.com/article/10.1007/BF00992696) — the baseline policy gradient:**
 
 ```
 ∇θ J(θ) = Eτ~πθ [R(τ) · Σₜ ∇θ log πθ(aₜ|sₜ)]
@@ -1268,7 +1268,7 @@ A^π(s,a) = Q^π(s,a) − V^π(s)      — advantage: better or worse than avera
 
 A > 0: this action was better than average from this state. A < 0: worse. Every algorithm computes advantage differently: PPO uses a learned critic + GAE, GRPO uses group-relative reward normalisation, REINFORCE++ uses batch-global normalisation.
 
-**GAE (Generalised Advantage Estimation) — bias-variance knob:**
+**[GAE](https://arxiv.org/abs/1506.02438) (Generalised Advantage Estimation) — bias-variance knob:**
 
 ```
 δₜ = rₜ + γVφ(sₜ₊₁) − Vφ(sₜ)          — TD residual
@@ -1369,7 +1369,7 @@ Including sample i in its own baseline shrinks its own advantage; RLOO excludes 
 | Entropy collapse | Symmetric clipping over-suppresses exploratory tokens | DAPO Clip-Higher (asymmetric) |
 | Token/sequence mismatch | Reward is per-sequence, optimisation per-token | GSPO sequence-level ratios |
 
-**Dr.GRPO — removing the hidden length bias.** Standard GRPO divides by response length `1/|oᵢ|`. Two completions: o₁ correct at 200 tokens, o₂ wrong at 2000 tokens. The gradient penalty on o₂ is 10× smaller per-token than o₁'s gradient reward. Over many updates: the policy learns *longer is safer*. Dr.GRPO removes the `1/|oᵢ|` normalisation — every token in a wrong response contributes the full penalty regardless of length.
+**[Dr.GRPO](https://arxiv.org/abs/2503.20783) — removing the hidden length bias.** Standard GRPO divides by response length `1/|oᵢ|`. Two completions: o₁ correct at 200 tokens, o₂ wrong at 2000 tokens. The gradient penalty on o₂ is 10× smaller per-token than o₁'s gradient reward. Over many updates: the policy learns *longer is safer*. Dr.GRPO removes the `1/|oᵢ|` normalisation — every token in a wrong response contributes the full penalty regardless of length.
 
 **DAPO — four targeted repairs for long-CoT:**
 
