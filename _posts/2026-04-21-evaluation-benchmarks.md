@@ -1,6 +1,7 @@
 ---
 title: "Evaluation & Benchmarking"
 date: 2026-04-21
+display_order: 11
 description: "A comprehensive reference for ML/AI evaluation — classification, regression, ranking, NLP, and generation metrics with equations, plus a full catalogue of LLM, code, math, agent, and VLM benchmarks with limitations and saturation analysis."
 tags: [evaluation, benchmarks, llm, ml-systems]
 ---

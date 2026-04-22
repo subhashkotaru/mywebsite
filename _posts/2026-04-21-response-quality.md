@@ -1,6 +1,7 @@
 ---
 title: "Response Quality in LLMs"
 date: 2026-04-21
+display_order: 10
 description: "A deep technical guide to factuality, reasoning, calibration, instruction following, safety, and evaluation in large language models — covering hallucination taxonomy, CoT variants, process reward models, benchmarks, and production monitoring."
 tags: [llm, evaluation, factuality, reasoning, alignment]
 ---

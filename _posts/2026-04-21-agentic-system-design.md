@@ -1,6 +1,7 @@
 ---
 title: "Agentic System Design"
 date: 2026-04-21
+display_order: 1
 description: "Designing reliable LLM-powered agents — architectures, tool use, memory, multi-agent coordination, and the engineering challenges that make agents hard to productionise."
 tags: [ml-systems, agents, llm, system-design]
 ---

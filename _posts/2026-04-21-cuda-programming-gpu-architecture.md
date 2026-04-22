@@ -1,6 +1,7 @@
 ---
 title: "CUDA Programming & GPU Architecture"
 date: 2026-04-21
+display_order: 9
 description: "How CUDA threads, warps, and shared memory map onto GPU hardware — with worked examples on matmul tiling and parallel reduction."
 tags: [ml-systems, cuda, gpu, hardware]
 ---

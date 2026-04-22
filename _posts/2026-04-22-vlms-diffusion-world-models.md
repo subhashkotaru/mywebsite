@@ -1,6 +1,7 @@
 ---
 title: "CNNs, VLMs, Diffusion, Video & World Models"
 date: 2026-04-22
+display_order: 18
 description: "A ground-up treatment of visual deep learning — convolutional networks, vision-language models, diffusion generative models, video models, and world models — with loss functions, training details, and a full VLM evaluation section."
 tags: [cnn, vlm, diffusion, video-models, world-models, multimodal, generative-ai]
 ---

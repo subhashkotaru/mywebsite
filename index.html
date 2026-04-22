@@ -58,7 +58,10 @@ title: Home
       <a href="{{ '/blogs' | relative_url }}" class="home-posts-all">All posts →</a>
     </div>
     <div class="home-posts-grid">
-      {% assign recent = site.posts | limit: 6 %}
+      {% assign ordered_posts = site.posts | where_exp: "post", "post.display_order != nil" | sort: "display_order" %}
+      {% assign remaining_posts = site.posts | where_exp: "post", "post.display_order == nil" %}
+      {% assign visible_posts = ordered_posts | concat: remaining_posts %}
+      {% assign recent = visible_posts | limit: 6 %}
       {% for post in recent %}
       <a href="{{ post.url | relative_url }}" class="home-post-card">
         <span class="home-post-card-title">{{ post.title }}</span>

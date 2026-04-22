@@ -1,6 +1,6 @@
 ---
 title: "Cloud & Infrastructure: Fundamentals to Production"
-date: 2026-04-22
+date: 2026-01-18
 description: "Cloud computing from first principles — virtualisation, networking, storage, and IAM — through practical AWS and GCP operations, API gateways, Nginx, load balancing, observability, and the pitfalls that actually bite you in production."
 tags: [cloud, aws, gcp, infrastructure, devops, networking, nginx]
 ---

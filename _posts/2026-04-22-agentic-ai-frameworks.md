@@ -1,6 +1,7 @@
 ---
 title: "Agentic AI Frameworks: LangChain, LangGraph, MCP & Memory"
 date: 2026-04-22
+display_order: 4
 description: "Practical guide to building agentic AI systems — LangChain primitives, LangGraph stateful multi-agent graphs, the Model Context Protocol, and every memory pattern from in-context to vector stores — all with working code."
 tags: [agents, langchain, langgraph, mcp, memory, llm, ai-engineering]
 ---

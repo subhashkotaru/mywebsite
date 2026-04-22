@@ -1,6 +1,7 @@
 ---
 title: "Software System Design for Interviews"
 date: 2026-04-21
+display_order: 17
 description: "A comprehensive guide to distributed systems design for interviews — covering architecture patterns, databases, caching, message queues, reliability, failure modes, and worked examples with diagrams, equations, and decision tables."
 tags: [system-design, distributed-systems, interview]
 ---

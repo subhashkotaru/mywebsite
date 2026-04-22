@@ -1,6 +1,7 @@
 ---
 title: "DSA Interview Preparation"
 date: 2026-04-21
+display_order: 13
 description: "A comprehensive reference for data structures and algorithms interviews — every major topic with complexity analysis, key patterns, LeetCode problems, and Python implementations."
 tags: [dsa, algorithms, interview]
 ---

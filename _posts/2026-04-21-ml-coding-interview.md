@@ -1,6 +1,7 @@
 ---
 title: "ML Coding Interview"
 date: 2026-04-21
+display_order: 14
 description: "From-scratch Python implementations of the most common ML coding interview questions: attention, transformers, beam search, embeddings, RAG, and more."
 tags: [ml, coding, interview, transformers, python]
 ---

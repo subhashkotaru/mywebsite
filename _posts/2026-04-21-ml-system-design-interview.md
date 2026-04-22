@@ -1,6 +1,7 @@
 ---
 title: "ML System Design Interview"
 date: 2026-04-21
+display_order: 15
 description: "A complete interview framework for ML system design — recommender systems, fraud detection, and agentic AI systems — with worked examples covering data pipelines, feature engineering, model selection, training, evaluation, serving, and failure handling."
 tags: [ml-systems, system-design, interviews, machine-learning]
 ---

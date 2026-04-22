@@ -1,6 +1,7 @@
 ---
 title: "Post-training"
 date: 2026-04-21
+display_order: 7
 description: "Adapting pretrained language models through the full post-training lifecycle — PEFT, alignment with SFT/DPO/GRPO, RLVR, chat templates, tool use, and modern evaluation."
 tags: [ml-systems, post-training, fine-tuning, llm, peft, rlvr]
 ---

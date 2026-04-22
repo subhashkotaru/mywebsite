@@ -1,6 +1,7 @@
 ---
 title: "Classic Machine Learning"
 date: 2026-04-21
+display_order: 12
 description: "The foundations of machine learning — supervised and unsupervised learning, core algorithms, model selection, and the statistical principles that underpin modern ML."
 tags: [machine-learning, statistics, algorithms]
 ---

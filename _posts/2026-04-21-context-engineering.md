@@ -1,6 +1,7 @@
 ---
 title: "Context Engineering for LLMs"
 date: 2026-04-21
+display_order: 2
 description: "A systematic survey of context engineering — the discipline of designing, managing, and optimising the information payloads that govern LLM behaviour, covering retrieval, processing, compression, memory, RAG, tool use, and multi-agent coordination."
 tags: [ml-systems, llm, agents, rag, context]
 ---

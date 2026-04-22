@@ -1,6 +1,6 @@
 ---
 title: "Reinforcement Learning"
-date: 2026-04-21
+date: 2026-01-18
 description: "A comprehensive treatment of reinforcement learning from bandits and dynamic programming through deep RL, policy gradients, model-based methods, multi-agent RL, and RLHF for large language models."
 tags: [rl, reinforcement-learning, deep-learning]
 ---

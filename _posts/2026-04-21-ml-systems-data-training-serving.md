@@ -1,6 +1,7 @@
 ---
 title: "ML Systems: Training, and Serving"
 date: 2026-04-21
+display_order: 5
 description: "Machine learning systems — from automatic differentiation to training at scale and production serving."
 tags: [ml-systems, machine-learning, engineering]
 ---
@@ -2137,4 +2138,3 @@ At each step, the current decoding suffix is looked up in both trees. Candidate 
   <a href="{{ '/blogs/cuda-programming-gpu-architecture' | relative_url }}" class="post-next-title">CUDA Programming &amp; GPU Architecture →</a>
   <p class="post-next-desc">Threads, warps, shared memory, and the two-level tiling strategy that maps high-level kernels onto Streaming Multiprocessors.</p>
 </div>
-

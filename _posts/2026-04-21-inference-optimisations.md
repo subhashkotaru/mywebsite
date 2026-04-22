@@ -1,6 +1,7 @@
 ---
 title: "Inference Optimisations"
 date: 2026-04-21
+display_order: 8
 description: "Techniques for making LLM inference fast and memory-efficient — quantisation, KV cache management, batching, speculative decoding, and hardware-aware kernel design, with the reasoning behind every design decision."
 tags: [ml-systems, inference, llm, optimisation]
 ---

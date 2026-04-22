@@ -1,6 +1,7 @@
 ---
 title: "Low-Level Design: OOP, Python Internals & Databases"
-date: 2026-04-21
+date: 2026-01-18
+display_order: 19
 description: "Practical low-level design — Python OOP from first principles (self, dunders, inheritance, SOLID), design patterns, SQL from basics to indexing and query planning, concurrency in databases and Python, and real interview problems worked end-to-end."
 tags: [lld, oop, python, sql, databases, interviews]
 ---

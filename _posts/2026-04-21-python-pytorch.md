@@ -1,6 +1,7 @@
 ---
 title: "Python & PyTorch: Basics to Expert"
 date: 2026-04-21
+display_order: 16
 description: "A complete reference from Python fundamentals through advanced patterns, PyTorch from tensors to distributed training, GPU cluster workflows (SLURM, CUDA), environment management with Conda, and profiling tools — with code snippets and bash command explanations throughout."
 tags: [python, pytorch, gpu, cuda, slurm, conda, deep-learning]
 ---

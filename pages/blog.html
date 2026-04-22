@@ -11,7 +11,10 @@ description: Thoughts on software, design, and the web.
   </header>
 
   <div class="post-list">
-    {% for post in site.posts %}
+    {% assign ordered_posts = site.posts | where_exp: "post", "post.display_order != nil" | sort: "display_order" %}
+    {% assign remaining_posts = site.posts | where_exp: "post", "post.display_order == nil" %}
+    {% assign visible_posts = ordered_posts | concat: remaining_posts %}
+    {% for post in visible_posts %}
     <article class="post-item">
       <time class="post-date" datetime="{{ post.date | date_to_xmlschema }}">{{ post.date | date: "%B %-d, %Y" }}</time>
       <h2 class="post-item-title">
@@ -31,7 +34,7 @@ description: Thoughts on software, design, and the web.
       {% endif %}
     </article>
     {% endfor %}
-    {% if site.posts.size == 0 %}
+    {% if visible_posts.size == 0 %}
     <p style="color: var(--text-muted); padding: 2rem 0;">No posts yet. Check back soon.</p>
     {% endif %}
   </div>

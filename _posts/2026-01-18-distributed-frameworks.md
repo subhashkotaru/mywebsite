@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "Distributed Computing Frameworks"
-date: 2026-04-22
+date: 2026-01-18
 categories: [engineering, distributed-systems]
 tags: [ray, dask, horovod, pytorch-distributed, celery, apache-beam, distributed-computing]
 description: "Ray, Dask, Horovod, PyTorch Distributed, Celery, Apache Beam — practical guide to distributed computing frameworks with real code"

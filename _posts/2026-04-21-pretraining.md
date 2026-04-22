@@ -1,6 +1,7 @@
 ---
 title: "Pretraining"
 date: 2026-04-21
+display_order: 6
 description: "How large language models are pretrained — data pipelines, tokenisation, training objectives, architecture choices, scaling laws, and the reasoning behind every design decision."
 tags: [ml-systems, pretraining, llm, scaling]
 ---
