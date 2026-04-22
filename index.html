@@ -2,14 +2,58 @@
 layout: home
 title: Home
 ---
+
 <section class="hero">
   <div class="container">
-    <span class="hero-eyebrow">Hello, I’m</span>
-    <h1 class="hero-title">Sai Subhash Kotaru<br><em>looking for full-time roles · 2026</em></h1>
-    <p class="hero-desc">I work on ML systems, LLMs, agentic AI, and recommender systems — building intelligent systems that are practical and reliable. Master’s in Computer Science at NYU.</p>
-    <div class="hero-actions">
-      <a href="{{ '/about' | relative_url }}" class="btn btn--primary">About me</a>
-      <a href="{{ '/projects' | relative_url }}" class="btn btn--outline">See my work</a>
+    <div class="hero-inner">
+      <div class="hero-text">
+        <span class="hero-eyebrow">Hello, I'm</span>
+        <h1 class="hero-title">
+          Sai Subhash Kotaru
+          <em>MS CS · NYU · 2026</em>
+        </h1>
+        <p class="hero-desc">I work on ML systems, LLMs, agentic AI, and recommender systems — building intelligent systems that are practical and reliable.</p>
+        <div class="hero-actions">
+          <a href="{{ '/about' | relative_url }}" class="btn btn--primary">About me</a>
+          <a href="{{ '/projects' | relative_url }}" class="btn btn--outline">See my work</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="home-projects">
+  <div class="container">
+    <div class="home-posts-header">
+      <h2 class="home-posts-title">Featured projects</h2>
+      <a href="{{ '/projects' | relative_url }}" class="home-posts-all">All projects →</a>
+    </div>
+    <div class="home-posts-grid">
+      {% assign sorted_projects = site.projects | sort: "order" | limit: 6 %}
+      {% for project in sorted_projects %}
+      <a href="{{ project.github }}" class="home-post-card" target="_blank" rel="noopener">
+        <span class="home-post-card-title">{{ project.title }}</span>
+        <span class="home-post-card-arrow">→</span>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="home-posts">
+  <div class="container">
+    <div class="home-posts-header">
+      <h2 class="home-posts-title">Recent writing</h2>
+      <a href="{{ '/blogs' | relative_url }}" class="home-posts-all">All posts →</a>
+    </div>
+    <div class="home-posts-grid">
+      {% assign recent = site.posts | limit: 6 %}
+      {% for post in recent %}
+      <a href="{{ post.url | relative_url }}" class="home-post-card">
+        <span class="home-post-card-title">{{ post.title }}</span>
+        <span class="home-post-card-arrow">→</span>
+      </a>
+      {% endfor %}
     </div>
   </div>
 </section>

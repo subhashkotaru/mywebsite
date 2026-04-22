@@ -151,4 +151,34 @@
   font-size: $text-sm;
   font-family: $font-mono;
   color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.project-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: $space-3;
+  margin-bottom: $space-2;
+}
+
+.project-title {
+  font-size: $text-base;
+  font-weight: $font-medium;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  margin-bottom: 0;
+}
+
+.project-section-divider {
+  margin: $space-12 0 $space-8;
+  padding-top: $space-8;
+  border-top: 1px solid var(--border-soft);
+}
+
+.project-section-title {
+  font-size: $text-lg;
+  font-weight: $font-medium;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
 }
