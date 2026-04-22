@@ -15,7 +15,6 @@ title: Home
         <p class="hero-desc">I work on ML systems, LLMs, agentic AI, and recommender systems — building intelligent systems that are practical and reliable.</p>
         <div class="hero-actions">
           <a href="{{ '/about' | relative_url }}" class="btn btn--primary">About me</a>
-          <a href="{{ '/projects' | relative_url }}" class="btn btn--outline">See my work</a>
         </div>
       </div>
     </div>
@@ -25,15 +24,27 @@ title: Home
 <section class="home-projects">
   <div class="container">
     <div class="home-posts-header">
-      <h2 class="home-posts-title">Featured projects</h2>
+      <h2 class="home-posts-title">Projects</h2>
       <a href="{{ '/projects' | relative_url }}" class="home-posts-all">All projects →</a>
     </div>
-    <div class="home-posts-grid">
+    <div class="project-grid">
       {% assign sorted_projects = site.projects | sort: "order" | limit: 6 %}
       {% for project in sorted_projects %}
-      <a href="{{ project.github }}" class="home-post-card" target="_blank" rel="noopener">
-        <span class="home-post-card-title">{{ project.title }}</span>
-        <span class="home-post-card-arrow">→</span>
+      <a href="{{ project.github }}" class="project-card project-card--link" target="_blank" rel="noopener">
+        <div class="project-body">
+          <div class="project-top">
+            <h2 class="project-title">{{ project.title }}</h2>
+            {% if project.year %}<span class="project-year">{{ project.year }}</span>{% endif %}
+          </div>
+          <p class="project-desc">{{ project.description }}</p>
+          {% if project.tags %}
+          <div class="tags">
+            {% for tag in project.tags %}
+            <span class="tag">{{ tag }}</span>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
       </a>
       {% endfor %}
     </div>
