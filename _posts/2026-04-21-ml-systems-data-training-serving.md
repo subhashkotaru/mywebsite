@@ -121,10 +121,8 @@ tags: [ml-systems, machine-learning, engineering]
 ## Scalable AI: The End-to-End Engineering Discipline
 {: #scalable-ai}
 
-> *"In 2026, 'a training run' is not a system. Large-scale AI is end-to-end engineering, and quality, cost, and reliability need co-design across stages."*  
-> — UC Berkeley Scalable AI, Spring 2026
 
-Most ML courses treat model training as the core problem and serve the model as an afterthought. Real production AI is the opposite: the training run is one stage in a **seven-stage lifecycle**, and decisions made at Stage 0 (target definition) cascade all the way to Stage 5 (application reliability). Upstream mistakes — a tokenizer with the wrong vocab size, an architecture with too many KV heads, data contamination in the eval set — compound silently until they become expensive downstream failures.
+We treat model training as the core problem and serve the model as an afterthought. Real production AI is the opposite: the training run is one stage in a **seven-stage lifecycle**, and decisions made at Stage 0 (target definition) cascade all the way to Stage 5 (application reliability). Upstream mistakes — a tokenizer with the wrong vocab size, an architecture with too many KV heads, data contamination in the eval set — compound silently until they become expensive downstream failures.
 
 This section frames the **two maps** you need to reason about any large-scale AI system:
 
