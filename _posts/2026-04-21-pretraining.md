@@ -26,6 +26,7 @@ tags: [ml-systems, pretraining, llm, scaling]
     <li><a href="#architecture">Model Architecture</a>
       <ul class="post-toc-sublist">
         <li><a href="#transformer-block">Transformer Block</a></li>
+        <li><a href="#activation-functions">Activation Functions</a></li>
         <li><a href="#positional-encoding">Positional Encoding</a></li>
         <li><a href="#normalisation">Normalisation</a></li>
       </ul>
@@ -252,6 +253,157 @@ h = h + FFN(RMSNorm(h))
 
 **Why is the hidden dim 8/3×d for SwiGLU vs 4×d for ReLU?** SwiGLU uses three weight matrices (W₁, W_gate, W₂) vs two for ReLU (W₁, W₂). To keep total FFN parameter count equal to the ReLU FFN (which has 2 × d × 4d = 8d² parameters), SwiGLU sets hidden dim to 8d/3 so that 3 × d × 8d/3 = 8d². In practice this is rounded to the nearest multiple of 64 for hardware efficiency.
 
+### Activation Functions
+{: #activation-functions}
+
+An activation function introduces non-linearity between linear layers. Without it, stacking $L$ linear layers is equivalent to a single linear layer — the network can only represent linear transformations regardless of depth. The non-linearity is what lets the network approximate arbitrary functions.
+
+**What we want from an ideal activation function:**
+
+1. **Non-saturating gradients** — the derivative should not go to zero for large inputs. Saturating activations (sigmoid, tanh for large inputs) cause vanishing gradients in deep networks.
+2. **Non-zero gradient everywhere** (or almost everywhere) — if $f'(x) = 0$ for a large region, neurons in that region stop learning. This is the "dead neuron" problem.
+3. **Approximately zero-centred output** — activations that are always positive shift the mean of the next layer's input, causing gradient updates to always point in the same direction (zig-zag optimisation).
+4. **Computationally cheap** — activation functions run on every element of every activation tensor — trillions of times per training run.
+5. **Smooth gradients** (differentiable) — helps with second-order optimisers and consistent gradient flow.
+6. **Monotonic** (usually) — non-monotonic activations can create multiple local optima in simple settings, though exceptions exist (Swish is non-monotonic).
+
+#### Sigmoid
+
+$$\sigma(x) = \frac{1}{1 + e^{-x}}$$
+
+Output range: $(0, 1)$. Derivative: $\sigma'(x) = \sigma(x)(1-\sigma(x))$.
+
+At $x=0$: $\sigma'(0) = 0.25$. At $x=5$: $\sigma'(5) \approx 0.007$. At $x=10$: $\sigma'(10) \approx 0.00005$.
+
+**Intuition:** Historically used because it outputs a probability-like value. The squashing to $(0,1)$ was seen as a feature.
+
+**Problems:**
+- **Saturating gradient**: for $\lvert x\rvert > 3$, the derivative is near zero. In a 10-layer network, if any layer's inputs are even slightly large, gradients vanish completely by the time they reach early layers. This is literally why deep networks couldn't be trained before ReLU and normalisation.
+- **Not zero-centred**: outputs are always positive, so the gradient with respect to weights in the next layer always has the same sign — all weights in a layer update in the same direction, causing zig-zag descent.
+- **Expensive**: computing $e^{-x}$ is slow compared to ReLU's max(0,x).
+
+**Extreme case**: 20-layer sigmoid network, no BatchNorm. Initialise weights with $\sigma=0.1$. After 5 layers, activations are clustered near 0.5 (sigmoid maps small values to ~0.5). The sigmoid derivative there is 0.25. Gradient at layer 1: $0.25^{20} \approx 10^{-12}$. First layer is completely frozen.
+
+**Where it's still used**: output layer for binary classification (single sigmoid), multi-label classification (sigmoid per class), gates in LSTM/GRU (where saturation is intentionally used to gate information).
+
+#### Tanh
+
+$$\tanh(x) = \frac{e^x - e^{-x}}{e^x + e^{-x}} = 2\sigma(2x) - 1$$
+
+Output range: $(-1, 1)$. Derivative: $\tanh'(x) = 1 - \tanh^2(x)$.
+
+At $x=0$: $\tanh'(0) = 1$. At $x=2$: $\tanh'(2) \approx 0.07$. At $x=3$: $\tanh'(3) \approx 0.01$.
+
+**Improvement over sigmoid**: zero-centred — outputs are in $(-1,1)$, so the average activation is near 0. This fixes the zig-zag gradient problem. Stronger gradient near 0 (derivative up to 1 vs sigmoid's max 0.25).
+
+**Same fundamental problem**: still saturates for large $\lvert x\rvert$. The vanishing gradient issue is delayed but not solved. Still used in LSTMs (cell state tanh, output gate tanh) where the gating structure mitigates the saturation.
+
+#### ReLU
+
+$$\text{ReLU}(x) = \max(0, x)$$
+
+Output range: $[0, +\infty)$. Derivative: $1$ if $x > 0$, $0$ if $x < 0$ (undefined at $x=0$, set to 0 by convention).
+
+**Intuition:** Compute like a biological neuron "fires" — either off (negative input, zero output) or on (positive input, linear output). Simple, fast, and it solved deep network training when Hinton and collaborators showed it empirically in 2010–2011.
+
+**Why it works so much better than sigmoid/tanh:**
+- **Non-saturating for positive inputs**: gradient is exactly 1 for any positive input. No matter how large — gradient flows perfectly.
+- **Sparse activations**: roughly half of neurons are off at any time. This creates sparsity which has implicit regularisation benefits and is computationally efficient (skip computation for zero activations).
+- **Cheap**: just `max(0, x)` — no exp, no division.
+
+**Dead neuron problem**: if a neuron's input is always negative (for all training examples), its gradient is always 0. The weight update is zero. The neuron is permanently dead — it will never recover because it receives no gradient signal. This happens when: (1) learning rate is too high (a big negative update moves the bias below zero), (2) poor initialisation (weights initialised so the neuron is always negative for training data). In large networks ~10–15% of neurons can die.
+
+**Not zero-centred**: outputs are always ≥ 0. Mean activation drifts positive. This causes the same zig-zag gradient problem as sigmoid, though less severe in practice because of BatchNorm.
+
+**Extreme case — dead neurons**: Train a 4-layer ReLU network with learning rate 0.1. The first few steps might make a large negative update to some neurons' biases. Now those neurons are dead. Visualise: if you look at the activation histogram after training, you'd see a spike at exactly 0 for ~15% of neurons — they never activate on any training example. The model has effectively reduced its own capacity.
+
+#### Leaky ReLU
+
+$$\text{LeakyReLU}(x) = \begin{cases} x & x > 0 \\ \alpha x & x \leq 0 \end{cases}$$
+
+where $\alpha$ is typically 0.01. Output range: $(-\infty, +\infty)$. Derivative: $1$ if $x > 0$, $\alpha$ if $x < 0$.
+
+**Fix for dead neurons**: the small slope $\alpha$ means neurons can still receive gradient signal even when negative — they can recover from a large negative update. The cost: introduces a hyperparameter $\alpha$ and the negative-activation outputs can affect downstream layers differently.
+
+**PReLU** (Parametric ReLU): same formula but $\alpha$ is a learned parameter. Each neuron learns its own negative slope. Used in computer vision. Adds $O(\text{channels})$ parameters — negligible cost, measurable gain.
+
+#### ELU (Exponential Linear Unit)
+
+$$\text{ELU}(x) = \begin{cases} x & x > 0 \\ \alpha(e^x - 1) & x \leq 0 \end{cases}$$
+
+Derivative: $1$ if $x > 0$, $\alpha e^x$ if $x \leq 0$.
+
+**Improvement**: smooth transition at $x=0$ (no sharp corner) and negative outputs approach $-\alpha$ as $x \to -\infty$ — controlled saturation in the negative regime. This makes outputs more zero-centred than ReLU (negative saturation pulls the mean down). But it still has some gradient attenuation for strongly negative inputs (gradient is $\alpha e^x$, which is small for large negative $x$).
+
+**SELU** (Self-normalising ELU): specific $\alpha = 1.6733$ and an additional scale factor $\lambda = 1.0507$. Under these constants, the network is *self-normalising* — if each layer's inputs have mean 0 and variance 1, then the outputs also have mean 0 and variance 1 (under specific weight initialisation: LeCun normal). This eliminates the need for BatchNorm entirely. Requires careful architecture adherence: no skip connections (they break the self-normalising property), no BatchNorm, LeCun initialisation. Rarely used in practice.
+
+#### GELU (Gaussian Error Linear Unit)
+
+$$\text{GELU}(x) = x \cdot \Phi(x) = x \cdot \frac{1}{2}\left[1 + \text{erf}\!\left(\frac{x}{\sqrt{2}}\right)\right]$$
+
+where $\Phi$ is the standard normal CDF. Approximately:
+
+$$\text{GELU}(x) \approx 0.5x\left(1 + \tanh\!\left(\sqrt{2/\pi}(x + 0.044715x^3)\right)\right)$$
+
+**Intuition:** Instead of a hard gate (ReLU: either pass or zero), GELU applies a soft, input-dependent gate: $x \times P(\text{keep})$ where $P(\text{keep}) = \Phi(x)$. For very positive $x$, $\Phi(x) \approx 1$ → pass through. For very negative $x$, $\Phi(x) \approx 0$ → nearly zero. The transition is smooth — no sharp corner at 0.
+
+**Properties:**
+- Non-monotonic near zero: there's a small negative region around $x \approx -0.1$ where the output is slightly negative even for slightly negative inputs. This is a non-linearity "for free" from the CDF shape.
+- Zero-centred outputs (unlike ReLU).
+- Smooth gradient everywhere (unlike ReLU's corner at 0).
+- More expensive than ReLU: requires `erf` computation (or tanh approximation).
+
+Used in BERT, GPT-2, GPT-3 (early versions). Empirically outperforms ReLU on NLP tasks — the soft gating interacts well with attention's own soft-gating.
+
+#### SiLU / Swish
+
+$$\text{SiLU}(x) = \text{Swish}(x) = x \cdot \sigma(x) = \frac{x}{1 + e^{-x}}$$
+
+Derivative: $\sigma(x) + x \cdot \sigma(x)(1 - \sigma(x)) = \sigma(x)(1 + x(1-\sigma(x)))$.
+
+**Relationship to GELU:** SiLU and GELU are nearly identical in practice. SiLU uses the sigmoid CDF instead of the Gaussian CDF — computationally cheaper (sigmoid vs erf). For most purposes, they're interchangeable. Google Brain discovered SiLU independently as "Swish" in a large-scale search over activation functions.
+
+**Non-monotonic**: for $x < -1.28$ approximately, the derivative is negative — output decreases as input increases. This is unusual and counterintuitive for an activation function. It means SiLU can learn more complex patterns than a simple gate. In practice this non-monotonicity seems helpful rather than harmful.
+
+**Why modern transformers use SiLU (as part of SwiGLU):**
+- Smooth → better gradient flow than ReLU
+- Non-saturating for positive inputs
+- Nearly zero-centred
+- The gating in SwiGLU (`SiLU(xW₁) ⊙ xW_gate`) is analogous to an input-dependent attention mechanism at the neuron level — the gate learns to selectively amplify relevant features
+
+#### SwiGLU
+
+$$\text{SwiGLU}(x, W_1, W_{\text{gate}}, W_2) = (\text{SiLU}(xW_1) \odot xW_{\text{gate}}) \cdot W_2$$
+
+This is not just an activation function — it's a full FFN architecture. Proposed by Noam Shazeer (2020), adopted by PaLM and then almost every major model since.
+
+**The GLU principle (Gated Linear Unit):** multiplying two paths gives the network a learned gate — one path computes features, the other computes which features to pass through. The product is zero when either path is zero. Unlike ReLU which gates based on a threshold, GLU gates based on the interaction of two separate learned transformations of the input.
+
+**Why the product is powerful:** consider feature detection. ReLU says "pass this feature if it's positive." SwiGLU says "pass feature A if feature B says to." Feature B can learn a meta-level representation of "when is A relevant?" — something no single-path activation can express.
+
+#### Activation Functions: Quick Reference Table
+
+| Function | Formula | Range | Gradient vanishes? | Dead neurons? | Zero-centred? | Used in |
+|---|---|---|---|---|---|---|
+| **Sigmoid** | $1/(1+e^{-x})$ | $(0,1)$ | Yes (for large $\lvert x\rvert$) | No | No | Binary output, LSTM gates |
+| **Tanh** | $(e^x-e^{-x})/(e^x+e^{-x})$ | $(-1,1)$ | Yes (for large $\lvert x\rvert$) | No | Yes | LSTM, RNN |
+| **ReLU** | $\max(0,x)$ | $[0,\infty)$ | No (positive) | Yes (~10%) | No | CNNs, deep networks |
+| **Leaky ReLU** | $x$ or $\alpha x$ | $(-\infty,\infty)$ | No | No | CNNs |
+| **ELU** | $x$ or $\alpha(e^x-1)$ | $(-\alpha,\infty)$ | Slightly (neg.) | No | Approximately | Deep networks |
+| **GELU** | $x \cdot \Phi(x)$ | $\approx(-0.17,\infty)$ | No | No | Yes | BERT, GPT-2/3 |
+| **SiLU/Swish** | $x \cdot \sigma(x)$ | $\approx(-0.28,\infty)$ | No | No | Yes | Modern transformers |
+| **SwiGLU** | $\text{SiLU}(xW_1)\odot xW_2$ | — | No | No | Yes | LLaMA, Mistral, PaLM |
+
+**Ideal activation scorecard:**
+
+| Criterion | Sigmoid | Tanh | ReLU | Leaky ReLU | GELU | SiLU |
+|---|---|---|---|---|---|---|
+| Non-saturating gradient | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ |
+| No dead neurons | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ |
+| Zero-centred output | ✗ | ✓ | ✗ | Approximately | ✓ | ✓ |
+| Computationally cheap | Medium | Medium | ✓ | ✓ | ✗ | Medium |
+| Smooth gradient | ✓ | ✓ | ✗ | ✗ | ✓ | ✓ |
+
 > **Interview question:** Why do transformers use residual connections? What would happen if you removed them?
 >
 > *Residual connections `h = h + F(h)` create a direct gradient highway from the loss back to early layers: `∂L/∂h_early = ∂L/∂h_late + cross-terms`. Without residuals, gradients must flow multiplicatively through every layer's Jacobian. In a 96-layer model, the product of 96 Jacobians either explodes or vanishes depending on whether their singular values are above or below 1 — this is the deep network training problem. With residuals, the identity term ensures a minimum gradient of 1 regardless of depth. Additionally, residuals allow the model to learn "corrections" to the identity transformation — early layers pass information through largely unchanged while later layers refine it, which is a more natural learning dynamic.*
@@ -315,12 +467,69 @@ RMSNorm(x) = x / RMS(x) · γ,   RMS(x) = √(1/d · Σᵢ xᵢ²)
 
 **Why RMSNorm works as well empirically.** The mean-centering step in LayerNorm was motivated by the original BN paper's argument that removing mean shift reduces internal covariate shift. In practice, transformers with residual connections already constrain activations to stay near zero — the mean is naturally small. The variance (RMS) is the active constraint that prevents explosion. Dropping mean-centering loses little while gaining computation.
 
-**Pre-norm vs post-norm.** The original transformer used post-norm: `h = LayerNorm(h + F(h))`. Almost all modern models use pre-norm: `h = h + F(LayerNorm(h))`.
+**Pre-norm vs post-norm** — one of the most consequential architectural choices in transformers. Almost all modern LLMs use pre-norm. Understanding *why* requires tracing both the forward pass and the backward pass.
 
-Why pre-norm is more stable:
+**Post-norm** (original transformer, BERT):
 
-- **Post-norm** applies normalisation to the sum `h + F(h)`. At initialisation, `F(h)` is small (weights are tiny), so normalisation is effectively applied to `h` alone — the residual contribution disappears, preventing deep models from learning identity-like early-layer transformations. More critically, post-norm creates gradient pathways that amplify variance with depth.
-- **Pre-norm** normalises the *input* to each sub-layer before it enters. Gradients flow through the residual pathway without passing through the normalisation op, giving stable gradient magnitudes regardless of depth.
+```
+h = LayerNorm(h + F(h))
+```
+
+The output of the residual branch is added to the input, and *then* normalised. Let's trace what happens:
+
+*At initialisation:* weights in $F$ are small (Xavier/He init), so $F(h) \approx 0$. The sum is approximately `h + 0 = h`. LayerNorm normalises `h` to unit variance — fine. But now consider what happens to gradient flow. The gradient with respect to the input $h$ at layer $l$ needs to pass back through the normalisation op:
+
+$$\frac{\partial \text{LN}(h + F(h))}{\partial h} = \frac{\partial \text{LN}}{\partial (h + F(h))} \cdot \left(I + \frac{\partial F}{\partial h}\right)$$
+
+The issue is the outer Jacobian $\partial \text{LN}/\partial (h+F(h))$. LayerNorm normalises by the standard deviation — its Jacobian is approximately $I/\sigma$, where $\sigma$ is the current standard deviation of `h + F(h)`. If activations grow through the network (common in early training without normalisation), $\sigma$ gets large, and this Jacobian shrinks — **gradient gets divided by $\sigma$ at every layer**. For a 24-layer model with growing activations, gradients can vanish rapidly.
+
+Conversely, if the activations are small (as at initialisation), $\sigma$ is small and the Jacobian is large — **gradient amplification**. This creates training instability: gradients oscillate between too-large and too-small depending on the current activation scale.
+
+*The residual path in post-norm is blocked by the normalisation op.* Every gradient flowing back must pass through LN, and LN's Jacobian depends on the activation magnitude at that layer — creating depth-dependent gradient variance.
+
+**Pre-norm** (LLaMA, Mistral, GPT-3, Gemini):
+
+```
+h = h + F(RMSNorm(h))
+```
+
+Now normalisation is applied *inside* the residual branch, before the sub-layer function $F$. The residual identity path $h \leftarrow h + \cdots$ is clean — gradients flow through it without touching any normalisation.
+
+The gradient with respect to $h$:
+
+$$\frac{\partial (h + F(\text{RMSNorm}(h)))}{\partial h} = I + \frac{\partial F}{\partial \text{RMSNorm}(h)} \cdot \frac{\partial \text{RMSNorm}}{\partial h}$$
+
+The identity matrix $I$ here is critical. Regardless of what the rest of the Jacobian does, the gradient always has at least a direct path back — the identity term adds 1 to every eigenvalue of the layer's Jacobian. This is the same reason residual connections work for deep training at all. Pre-norm keeps this identity path completely clean.
+
+**Gradient magnitude comparison — why this matters at depth:**
+
+Consider a 24-layer transformer. In **post-norm**, the gradient from the top layer back to layer 1 involves a product of 24 Jacobians from the LayerNorm operations. Even if each individual Jacobian is slightly less than 1 (due to activation variance > 1), the product shrinks exponentially. For gradients to reach layer 1 with magnitude 1.0, activation variance must be *exactly* 1.0 at every layer — a fragile requirement that breaks as training progresses.
+
+In **pre-norm**, the identity terms in each layer's Jacobian ensure that gradients cannot shrink below 1.0 regardless of activation scale. The gradient from the top to any earlier layer has a "highway" that never gets multiplied away:
+
+$$\frac{\partial L}{\partial h_l} = \frac{\partial L}{\partial h_L} + \sum_{k=l}^{L-1} \underbrace{\frac{\partial L}{\partial h_{k+1}} \cdot \frac{\partial F_k(\text{Norm}(h_k))}{\partial h_k}}_{\text{correction terms}}$$
+
+The first term is a direct copy of the gradient from the top — unattenuated.
+
+**What post-norm is better at:** representation quality at *shallow* depth. When the model is only 6–12 layers, post-norm's normalisation after addition creates slightly better-calibrated intermediate representations — the normalisation after each residual corrects for any mismatch in scale between $h$ and $F(h)$. BERT and the original transformer were shallow enough that this advantage outweighed the gradient instability.
+
+**Why modern models all use pre-norm:** frontier models are 32–96+ layers. Post-norm is untrainable at this depth without extremely careful initialisation, very slow learning rate warm-up, and often auxiliary losses to stabilise early training. Pre-norm simply trains — you get stable gradient norms, no warm-up required (though it's still used for AdamW moment stability), and the model scales cleanly to arbitrary depth.
+
+**Hybrid: Sandwich Norm** — some models (like Cogformer) use both:
+
+```
+h = LayerNorm(h + F(LayerNorm(h)))
+```
+
+Pre-norm the input to $F$ (stability), post-norm the residual output (representation quality). Used when you want the best of both but is more expensive.
+
+**Deep Norm** (DeepNet, 2022) — allows post-norm to scale to 1000+ layers by initialising residual branch weights with factor $\alpha$ and re-scaling with $\beta$:
+
+```
+h = LayerNorm(α·h + F(h, β·init))
+```
+
+The $\alpha > 1$ scaling on the residual ensures the post-norm sees a large enough signal from the identity path. DeepNet trains 1000-layer transformers stably with post-norm. But it requires careful tuning of $\alpha$ and $\beta$ — in practice almost no production model uses it; pre-norm is simpler and "just works."
 
 The practical evidence: pre-norm models train stably at 96+ layers without learning rate warm-up hacks required for post-norm models of similar depth.
 
@@ -338,7 +547,60 @@ The practical evidence: pre-norm models train stably at 96+ layers without learn
 
 Weight initialisation sets the scale of parameters before any gradient updates. The goal: keep activation variance and gradient variance roughly constant across layers at the start of training — too small and gradients vanish, too large and they explode.
 
-**The variance propagation problem.** In a linear layer $y = Wx$ where $W \in \mathbb{R}^{d_\text{out} \times d_\text{in}}$, if each weight $w_{ij} \sim \mathcal{N}(0, \sigma^2)$ and inputs are zero-mean with variance $\text{Var}(x_i)$:
+#### Why variance is the thing we care about
+
+Before the formulas, it's worth building real intuition for **why variance specifically** is what we're managing — not mean, not max, not L2 norm.
+
+A neural network layer is a sum:
+
+$$y_j = \sum_{i=1}^{d_\text{in}} w_{ij} \cdot x_i$$
+
+By the **law of total variance** (assuming $w_{ij}$ and $x_i$ are independent, zero-mean):
+
+$$\text{Var}(y_j) = \sum_{i=1}^{d_\text{in}} \text{Var}(w_{ij}) \cdot \text{Var}(x_i) = d_\text{in} \cdot \sigma_w^2 \cdot \sigma_x^2$$
+
+This single equation is the whole story. The variance of the output equals (fan-in) × (weight variance) × (input variance). If any of these is wrong by a constant factor, and you stack $L$ layers, you get that constant factor raised to the $L$-th power. With $L=50$ layers:
+
+- $\sigma_w^2 = 0.5 \times \text{correct}$ → output variance scales as $0.5^{50} \approx 10^{-15}$ — complete vanishing
+- $\sigma_w^2 = 2 \times \text{correct}$ → output variance scales as $2^{50} \approx 10^{15}$ — complete explosion
+
+**Why not control the mean instead?** You could make weights positive-mean to keep activations positive, but then the mean also compounds exponentially and the loss landscape becomes ill-conditioned. The mean is easy to control — just zero-initialise biases. The variance is the dangerous one.
+
+**Why not control max instead?** Individual weight extremes don't matter — each output is a sum of $d_\text{in}$ terms. By the central limit theorem, those sums are approximately Gaussian regardless of the individual distribution. What matters is the variance of that Gaussian.
+
+**The concrete intuition — a worked example:**
+
+Consider a 5-layer MLP, each layer with $d = 1000$ neurons. Three cases:
+
+*Case A: weights too large*, $\sigma_w^2 = 1/100$ instead of $1/1000$:
+$$\text{Var}(\text{layer } l) = (1000 \times \frac{1}{100})^l \cdot \text{Var}(\text{input}) = 10^l \cdot \text{Var}(\text{input})$$
+After 5 layers: activations have grown by $10^5 = 100{,}000\times$. The softmax at the output saturates — every probability collapses to 0 or 1. Gradients through softmax are near zero. Training stalls immediately.
+
+*Case B: weights too small*, $\sigma_w^2 = 1/10000$ instead of $1/1000$:
+$$\text{Var}(\text{layer } l) = (1000 \times \frac{1}{10000})^l = (0.1)^l$$
+After 5 layers: activations shrunk by $(0.1)^5 = 10^{-5}$. The loss gradient is roughly $\partial L / \partial x_{\text{layer 0}} \approx \partial L / \partial x_{\text{layer 5}} \times (0.1)^5$. First-layer weights get gradient $10^{-5}\times$ smaller than last-layer weights. First layer barely trains.
+
+*Case C: correct variance*, $\sigma_w^2 = 1/1000$:
+$$\text{Var}(\text{layer } l) = (1000 \times \frac{1}{1000})^l = 1^l = 1$$
+Activation variance stays at 1 throughout. Gradients reach every layer at the same scale. All layers train at similar rates.
+
+**The same analysis applies to the backward pass** — gradients also propagate through weight matrices, and the same variance multiplication logic applies in reverse. This is why Xavier accounts for both $d_\text{in}$ (forward) and $d_\text{out}$ (backward).
+
+**Why variance matters in attention specifically.** The attention score is $s_{ij} = q_i^\top k_j / \sqrt{d}$ where $q_i, k_j \in \mathbb{R}^d$. Before the $\sqrt{d}$ scaling:
+
+$$\text{Var}(q_i^\top k_j) = \text{Var}\!\left(\sum_{k=1}^d q_{ik} k_{jk}\right) = d \cdot \text{Var}(q_{ik}) \cdot \text{Var}(k_{jk})$$
+
+If $q$ and $k$ both have unit variance (which they should if initialisation and normalisation are correct), then $\text{Var}(q_i^\top k_j) = d$. The standard deviation is $\sqrt{d}$.
+
+**Extreme case without the $\sqrt{d}$ scaling** (e.g. $d = 512$): raw dot products have std $\approx \sqrt{512} \approx 22.6$. The softmax of values like $\{-20, 5, 22, -8\}$ looks like:
+
+$$\text{softmax}([{-20, 5, 22, {-8}}]) \approx [0, 0, 1, 0]$$
+
+One token gets all the attention. Gradients through this near-one-hot distribution are approximately zero for the 0-weighted tokens. Attention heads collapse — they can only attend to the most similar token and cannot learn soft combinations. Dividing by $\sqrt{d}$ gives values like $\{-0.88, 0.22, 0.97, -0.35\}$ — soft, gradient-friendly.
+
+**Extreme case without scaling in a 100-layer network** — even with $\sqrt{d}$ in attention, if weight init has $\sigma_w^2 = 1.0$ instead of $1/d_\text{in}$: at layer 1 activations have std $\sqrt{d} \approx 23$; by layer 5, std $\approx 23^5 \approx 6 \times 10^6$; by layer 10, NaN. This is not hypothetical — it's what you get if you call `nn.Linear` without setting weights and forget that PyTorch's default Kaiming init assumes ReLU, which is wrong for transformer attention.
+
+**The variance propagation problem in full.** In a linear layer $y = Wx$ where $W \in \mathbb{R}^{d_\text{out} \times d_\text{in}}$, if each weight $w_{ij} \sim \mathcal{N}(0, \sigma^2)$ and inputs are zero-mean with variance $\text{Var}(x_i)$:
 
 $$\text{Var}(y_j) = d_\text{in} \cdot \sigma^2 \cdot \text{Var}(x_i)$$
 
