@@ -375,6 +375,8 @@ Derivative: $\sigma(x) + x \cdot \sigma(x)(1 - \sigma(x)) = \sigma(x)(1 + x(1-\s
 
 $$\text{SwiGLU}(x, W_1, W_{\text{gate}}, W_2) = (\text{SiLU}(xW_1) \odot xW_{\text{gate}}) \cdot W_2$$
 
+![SwiGLU architecture diagram showing two parallel linear projections — one through SiLU, one linear gate — element-wise multiplied before the output projection]({{ "/assets/images/SWiGLU.png" | relative_url }})
+
 This is not just an activation function — it's a full FFN architecture. Proposed by Noam Shazeer (2020), adopted by PaLM and then almost every major model since.
 
 **The GLU principle (Gated Linear Unit):** multiplying two paths gives the network a learned gate — one path computes features, the other computes which features to pass through. The product is zero when either path is zero. Unlike ReLU which gates based on a threshold, GLU gates based on the interaction of two separate learned transformations of the input.
